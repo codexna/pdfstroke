@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>PDF Stroke</title>
+  <meta name="description" content="PDF Stroke: edita el texto original, añade texto, imágenes, firmas, dibujos y organiza páginas.">
+  <meta name="theme-color" content="#b91c1c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="vendor/fonts/fonts.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="no-doc tool-select">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></symbol>
+    <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></symbol>
+    <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M8 11h6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-pages" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="m4 4 7 17 2.5-7.5L21 11z"/></symbol>
+    <symbol id="i-edittext" viewBox="0 0 24 24"><path d="M4 7V5h12v2M10 5v14M8 19h4"/><path d="m14.5 18.5 5.6-5.6a1.5 1.5 0 0 1 2.1 2.1l-5.6 5.6-2.8.7z"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M3 21c3-1 4-3 6-3s2 2 5 2 5-3 7-4"/><path d="m15 4 3 3-8 8H7v-3z"/></symbol>
+    <symbol id="i-highlight" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1"/></symbol>
+    <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="7"/></symbol>
+    <symbol id="i-line" viewBox="0 0 24 24"><path d="M4 20 20 4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 20 20 4M10 4h10v10"/></symbol>
+    <symbol id="i-whiteout" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></symbol>
+    <symbol id="i-sign" viewBox="0 0 24 24"><path d="M3 17c2-4 4-9 6-9s-1 9 1 9 3-5 5-5-1 4 1 4 3-2 5-2"/><path d="M3 21h18"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/></symbol>
+    <symbol id="i-rot-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-rot-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-file-plus" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9 15h6"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><rect x="3" y="3" width="10" height="13" rx="1"/><rect x="11" y="8" width="10" height="13" rx="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M3 9V4h5M21 9V4h-5M3 15v5h5M21 15v5h-5"/></symbol>
+    <symbol id="i-bold" viewBox="0 0 24 24"><path d="M7 4h6a4 4 0 0 1 0 8H7zM7 12h7a4 4 0 0 1 0 8H7z"/></symbol>
+    <symbol id="i-italic" viewBox="0 0 24 24"><path d="M19 4h-9M14 20H5M15 4 9 20"/></symbol>
+    <symbol id="i-new" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-picker" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4z"/></symbol>
+    <symbol id="i-fill" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0z"/><path d="m5 2 5 5M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4z"/></symbol>
+    <symbol id="i-convert" viewBox="0 0 24 24"><path d="M4 8h13"/><path d="m13 4 4 4-4 4"/><path d="M20 16H7"/><path d="m11 12-4 4 4 4"/></symbol>
+    <symbol id="i-word" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="m7.5 12 1.7 6 2.8-5 2.8 5 1.7-6"/></symbol>
+    <symbol id="i-pro" viewBox="0 0 24 24"><path d="m3 8 3.5 10h11L21 8l-5.5 3.5L12 5l-3.5 6.5z"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2 9 5M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <button class="icon-btn needs-doc" id="btnPages" title="Páginas: ordenar, girar, eliminar y unir"><svg><use href="#i-pages"/></svg></button>
+  <div class="file-name" id="fileName"></div>
+  <div class="spacer"></div>
+  <div class="group needs-doc">
+    <button class="icon-btn" id="btnUndo" title="Deshacer (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
+    <button class="icon-btn" id="btnRedo" title="Rehacer (Ctrl+Y)" disabled><svg><use href="#i-redo"/></svg></button>
+  </div>
+  <div class="group zoom needs-doc">
+    <button class="icon-btn hide-sm" id="btnZoomOut" title="Alejar"><svg><use href="#i-zoom-out"/></svg></button>
+    <button class="zoom-label" id="btnZoomFit" title="Ajustar al ancho">100%</button>
+    <button class="icon-btn hide-sm" id="btnZoomIn" title="Acercar"><svg><use href="#i-zoom-in"/></svg></button>
+  </div>
+  <button class="icon-btn needs-doc" id="btnSearch" title="Buscar (Ctrl+F)"><svg><use href="#i-search"/></svg></button>
+  <button class="icon-btn" id="btnOpen" title="Abrir PDF (Ctrl+O)"><svg><use href="#i-open"/></svg></button>
+  <button class="icon-btn needs-doc" id="btnConvert" title="Convertir (a Word, a imagen) y unir"><svg><use href="#i-convert"/></svg></button>
+  <button class="icon-btn needs-doc" id="btnShare" title="Compartir" hidden><svg><use href="#i-share"/></svg></button>
+  <button class="icon-btn only-native pro-btn" id="btnPro" title="PDF Stroke Pro"><svg><use href="#i-pro"/></svg></button>
+  <button class="btn primary needs-doc" id="btnSave" title="Guardar (Ctrl+S)"><svg><use href="#i-save"/></svg><span>Guardar</span></button>
+</header>
+
+<nav class="toolbar needs-doc" id="toolbar" aria-label="Herramientas">
+  <button data-tool="select" class="active"><svg><use href="#i-select"/></svg><span>Seleccionar</span></button>
+  <button data-tool="edittext"><svg><use href="#i-edittext"/></svg><span>Editar texto</span></button>
+  <button data-tool="text"><svg><use href="#i-text"/></svg><span>Añadir texto</span></button>
+  <button data-tool="pen"><svg><use href="#i-pen"/></svg><span>Dibujar</span></button>
+  <button data-tool="highlight"><svg><use href="#i-highlight"/></svg><span>Resaltar</span></button>
+  <button data-tool="rect"><svg><use href="#i-rect"/></svg><span>Rectángulo</span></button>
+  <button data-tool="ellipse"><svg><use href="#i-ellipse"/></svg><span>Elipse</span></button>
+  <button data-tool="line"><svg><use href="#i-line"/></svg><span>Línea</span></button>
+  <button data-tool="arrow"><svg><use href="#i-arrow"/></svg><span>Flecha</span></button>
+  <button data-tool="whiteout"><svg><use href="#i-whiteout"/></svg><span>Tapar</span></button>
+  <button data-tool="picker"><svg><use href="#i-picker"/></svg><span>Cuentagotas</span></button>
+  <button data-tool="fill"><svg><use href="#i-fill"/></svg><span>Rellenar</span></button>
+  <button data-tool="image"><svg><use href="#i-image"/></svg><span>Imagen</span></button>
+  <button data-tool="sign"><svg><use href="#i-sign"/></svg><span>Firma</span></button>
+</nav>
+
+<div class="propsbar needs-doc" id="props">
+  <div class="hint" id="toolHint"></div>
+  <button class="prop btn ghost" data-prop="autofit" id="pAutofit" title="Ajustar la caja al texto"><svg><use href="#i-fit"/></svg><span>Ajustar caja</span></button>
+  <label class="prop" data-prop="family"><select id="pFamily" title="Fuente">
+    <option value="sans">Sans (Helvetica)</option>
+    <option value="serif">Serif (Times)</option>
+    <option value="mono">Mono (Courier)</option>
+  </select></label>
+  <div class="prop size-ctl" data-prop="size" title="Tamaño de letra">
+    <button class="step" id="pSizeDown" type="button" title="Reducir tamaño">−</button>
+    <input id="pSize" type="number" min="3" max="200" step="0.5" aria-label="Tamaño de letra">
+    <button class="step" id="pSizeUp" type="button" title="Aumentar tamaño">+</button>
+    <span class="unit">pt</span>
+  </div>
+  <button class="prop toggle" data-prop="bold" id="pBold" title="Negrita"><svg><use href="#i-bold"/></svg></button>
+  <button class="prop toggle" data-prop="italic" id="pItalic" title="Cursiva"><svg><use href="#i-italic"/></svg></button>
+  <label class="prop color" data-prop="textColor" title="Color del texto"><span>Texto</span><input id="pTextColor" type="color"><button class="pick" type="button" data-pick="textColor" title="Tomar el color de la página (cuentagotas)"><svg><use href="#i-picker"/></svg></button></label>
+  <label class="prop color" data-prop="stroke" title="Color del trazo"><span>Trazo</span><input id="pStroke" type="color"><button class="pick" type="button" data-pick="stroke" title="Tomar el color de la página (cuentagotas)"><svg><use href="#i-picker"/></svg></button></label>
+  <label class="prop color" data-prop="fill" title="Relleno"><span>Relleno</span><input id="pFill" type="color"><button class="pick" type="button" data-pick="fill" title="Tomar el color de la página (cuentagotas)"><svg><use href="#i-picker"/></svg></button><input id="pFillOn" type="checkbox" title="Usar relleno"></label>
+  <label class="prop color" data-prop="bucket" title="Color con el que se rellena"><span>Color</span><input id="pBucket" type="color"><button class="pick" type="button" data-pick="bucket" title="Tomar el color de la página (cuentagotas)"><svg><use href="#i-picker"/></svg></button></label>
+  <span class="prop" data-prop="bucket">Toca una zona tapada, una forma, un dibujo o un texto para pintarlo de este color.</span>
+  <label class="prop" data-prop="width" title="Grosor de la línea"><span>Grosor</span><input id="pWidth" type="range" min="0.5" max="40" step="0.5"><input id="pWidthNum" type="number" min="0.5" max="100" step="0.5" aria-label="Grosor en puntos"><span class="unit">pt</span></label>
+  <label class="prop" data-prop="opacity" title="Opacidad"><span>Opacidad</span><input id="pOpacity" type="range" min="0.1" max="1" step="0.05"></label>
+  <div class="prop swatches" data-prop="hlcolor" id="pHlColors">
+    <button data-c="#fff176" style="--c:#fff176" title="Amarillo"></button>
+    <button data-c="#a5f3a1" style="--c:#a5f3a1" title="Verde"></button>
+    <button data-c="#8fd3ff" style="--c:#8fd3ff" title="Azul"></button>
+    <button data-c="#ffadd2" style="--c:#ffadd2" title="Rosa"></button>
+    <button data-c="#ffc078" style="--c:#ffc078" title="Naranja"></button>
+  </div>
+  <div class="spacer"></div>
+  <button class="prop btn ghost" data-prop="selected" id="pDuplicate" title="Duplicar"><svg><use href="#i-copy"/></svg><span>Duplicar</span></button>
+  <button class="prop btn ghost danger" data-prop="selected" id="pDelete" title="Eliminar (Supr)"><svg><use href="#i-trash"/></svg><span>Eliminar</span></button>
+</div>
+
+<main class="workspace">
+  <aside class="sidebar needs-doc" id="sidebar">
+    <div class="sidebar-head">
+      <strong>Páginas</strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="btnAddBlank" title="Añadir página en blanco"><svg><use href="#i-file-plus"/></svg></button>
+      <button class="icon-btn sm" id="btnInsertPdf" title="Unir: añadir páginas de otros PDF, imágenes o Word"><svg><use href="#i-merge"/></svg></button>
+      <button class="icon-btn sm only-sm" id="btnCloseSidebar" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="thumbs" id="thumbs"></div>
+  </aside>
+  <div class="sidebar-scrim" id="scrim"></div>
+
+  <section class="viewer" id="viewer">
+    <div class="pages" id="pages"></div>
+    <div class="empty" id="empty">
+      <div class="drop-card" id="dropCard">
+        <img src="icons/icon.svg" alt="" class="empty-logo">
+        <h1>PDF Stroke</h1>
+        <p>Edita el texto original, añade texto, imágenes, firmas y dibujos, y organiza las páginas. Todo se procesa en tu dispositivo: tus archivos no se suben a ningún servidor.</p>
+        <div class="empty-actions">
+          <button class="btn primary big" id="btnOpenBig"><svg><use href="#i-open"/></svg><span>Abrir PDF</span></button>
+          <button class="btn big" id="btnNewBlank"><svg><use href="#i-new"/></svg><span>PDF en blanco</span></button>
+        </div>
+        <div class="start-tools">
+          <button data-start="merge"><svg><use href="#i-merge"/></svg><span>Unir PDF</span></button>
+          <button data-start="pages"><svg><use href="#i-pages"/></svg><span>Organizar páginas</span></button>
+          <button data-start="word2pdf"><svg><use href="#i-word"/></svg><span>Word a PDF</span></button>
+          <button data-start="pdf2word"><svg><use href="#i-word"/></svg><span>PDF a Word</span></button>
+          <button data-start="img2pdf"><svg><use href="#i-image"/></svg><span>Imagen a PDF</span></button>
+          <button data-start="pdf2img"><svg><use href="#i-image"/></svg><span>PDF a imagen</span></button>
+        </div>
+        <p class="drop-hint hide-sm">o arrastra aquí un PDF, imágenes o un Word</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-indicator needs-doc" id="pageIndicator"></div>
+
+  <div class="search-panel" id="searchPanel" hidden>
+    <input id="searchInput" type="search" placeholder="Buscar en el documento" autocomplete="off">
+    <span class="search-count" id="searchCount"></span>
+    <button class="icon-btn sm" id="searchPrev" title="Anterior"><svg><use href="#i-prev"/></svg></button>
+    <button class="icon-btn sm" id="searchNext" title="Siguiente"><svg><use href="#i-next"/></svg></button>
+    <button class="icon-btn sm" id="searchClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+  </div>
+</main>
+
+<div class="modal" id="signModal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong>Firma</strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="signClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="saved-signs" id="savedSigns"></div>
+    <p class="muted small">Dibuja tu firma con el dedo, el lápiz o el ratón.</p>
+    <canvas id="signPad"></canvas>
+    <div class="modal-foot">
+      <div class="swatches" id="signColors">
+        <button data-c="#111111" style="--c:#111111" class="on" title="Negro"></button>
+        <button data-c="#1d3fbb" style="--c:#1d3fbb" title="Azul"></button>
+        <button data-c="#b91c1c" style="--c:#b91c1c" title="Rojo"></button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="signClear">Borrar</button>
+      <button class="btn primary" id="signOk">Usar firma</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="savedModal" hidden>
+  <div class="modal-card saved-card" role="alertdialog" aria-labelledby="savedTitle">
+    <div class="saved-icon"><svg><use href="#i-check"/></svg></div>
+    <h2 id="savedTitle">Archivo guardado</h2>
+    <p class="saved-where" id="savedWhere"></p>
+    <p class="muted" id="savedLeft" hidden></p>
+    <button class="btn primary big" id="savedOk">Aceptar</button>
+  </div>
+</div>
+
+<div class="modal" id="proModal" hidden>
+  <div class="modal-card pro-card">
+    <div class="modal-head">
+      <strong>PDF Stroke Pro</strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="proClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <p class="pro-reason" id="proReason" hidden></p>
+    <ul class="pro-list">
+      <li>Sin publicidad</li>
+      <li>Guarda, comparte y convierte (Word, imagen) sin límite</li>
+    </ul>
+    <div class="pro-plans">
+      <button class="btn primary big" id="proBuyYearly"><span>Anual</span><small id="proYearly">7,99 € al año</small></button>
+      <button class="btn big" id="proBuyMonthly"><span>Mensual</span><small id="proMonthly">0,99 € al mes</small></button>
+    </div>
+    <p class="muted small" id="proStatus"></p>
+    <div class="modal-foot">
+      <button class="btn ghost" id="proRestore">Restaurar compras</button>
+      <button class="btn ghost" id="proManage" hidden>Gestionar suscripción</button>
+      <button class="btn ghost" id="proPrivacy">Privacidad de los anuncios</button>
+    </div>
+    <p class="muted small">La suscripción se renueva automáticamente. Puedes cancelarla cuando quieras en Google Play.</p>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden><div class="spinner"></div><span id="busyText">Procesando…</span></div>
+<div class="toasts" id="toasts"></div>
+
+<input type="file" id="fileOpen" accept="application/pdf,.pdf,image/*,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
+<input type="file" id="fileInsert" accept="application/pdf,.pdf,image/*,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
+<input type="file" id="fileTool" hidden>
+<div class="menu" id="convertMenu" hidden>
+  <button data-conv="word"><svg><use href="#i-word"/></svg><span>PDF a Word <small>.docx</small></span></button>
+  <button data-conv="jpg"><svg><use href="#i-image"/></svg><span>PDF a imagen <small>JPG</small></span></button>
+  <button data-conv="png"><svg><use href="#i-image"/></svg><span>PDF a imagen <small>PNG</small></span></button>
+  <button data-conv="merge"><svg><use href="#i-merge"/></svg><span>Unir con otros PDF, imágenes o Word</span></button>
+</div>
+<input type="file" id="fileImage" accept="image/*" hidden>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
