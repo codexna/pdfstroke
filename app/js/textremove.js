@@ -251,7 +251,7 @@ const mul = (m, n) => [
   m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5],
 ];
 const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-const zonesAt = (zones, x, y) => zones.filter((z) => x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1);
+const zonesAt = (zones, x, y) => zones.filter((z) => !z.img && x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1);
 const fmtNum = (v) => (Math.abs(v) < 1e-6 ? '0' : (+v.toFixed(4)).toString());
 const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -287,7 +287,7 @@ export function removeTextInZones(doc, page, zones) {
   const resources = node.Resources();
   const { out, forms, dropped } = rewrite(job, bytes, resources, gs, 0);
   if (!out) return 0;
-  if (forms.length) node.set(PDFName.of('Resources'), withForms(doc, resources, forms, dropped));
+  if (forms.length || dropped.length) node.set(PDFName.of('Resources'), withForms(doc, resources, forms, dropped));
   // Como lista de flujos (igual que la deja pdf-lib al dibujar en la página): así se le pueden añadir otros después
   node.set(PDFName.of('Contents'), doc.context.obj([doc.context.register(doc.context.flateStream(out))]));
   return job.removed;
@@ -476,6 +476,15 @@ function rewrite(job, bytes, resources, gs0, depth) {
     replacements.push({ s: op.s, e: op.e, text: `/${newName} Do` });
   };
 
+  /** Zona de imagen (ver pdfimages.js) que coincide con la imagen que se va a dibujar con la matriz actual. */
+  const imageZone = () => {
+    const pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => apply(gs.ctm, x, y));
+    const x0 = Math.min(...pts.map((q) => q[0])), x1 = Math.max(...pts.map((q) => q[0]));
+    const y0 = Math.min(...pts.map((q) => q[1])), y1 = Math.max(...pts.map((q) => q[1]));
+    const tol = Math.max(1.5, 0.02 * Math.max(x1 - x0, y1 - y0));
+    return zones.find((z) => z.img && Math.abs(z.x0 - x0) < tol && Math.abs(z.x1 - x1) < tol && Math.abs(z.y0 - y0) < tol && Math.abs(z.y1 - y1) < tol);
+  };
+
   const drawXObject = (op) => {
     const name = op.operands[0]?.t === 'name' ? op.operands[0].v : null;
     if (!name) return;
@@ -484,6 +493,16 @@ function rewrite(job, bytes, resources, gs0, depth) {
     if (!(xo instanceof PDFStream)) return;
     const sub = xo.dict.lookup(PDFName.of('Subtype'));
     const kind = sub instanceof PDFName ? sub.asString() : '';
+    if (kind === '/Image') {
+      const z = imageZone();
+      if (z) {
+        // Imagen original movida o eliminada: deja de dibujarse aquí
+        z.removedImg = (z.removedImg || 0) + 1;
+        replacedCount.set(name, (replacedCount.get(name) || 0) + 1);
+        replacements.push({ s: op.s, e: op.e, text: '' });
+        return;
+      }
+    }
     if (kind === '/Image') imageDrawn(xo.dict);
     else if (kind === '/Form') drawForm(op, name, xo);
   };

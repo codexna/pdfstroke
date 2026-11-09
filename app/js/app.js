@@ -6,8 +6,17 @@ import {
   renderObjects, renderSelection, applyStyle, deleteSelected, duplicateSelected, nudgeSelected, addImage,
   selectedObject, deselect, finishEditing, isDrawTool, isEditingText, justTyped, resumeEditing, toggleTextStyle, textStyleState,
   textSelectionStyle, stepTextSize, resetTextBox, syncEditing, commitPendingStyle, discardPendingStyle,
-  startColorPick, cancelColorPick, isPickingColor, paintObject,
+  startColorPick, cancelColorPick, isPickingColor, paintObject, openImage, replaceImage,
 } from './objects.js';
+import { imageAt, imagePixels, dropImageCache } from './pdfimages.js';
+import { initVoz, startReading } from './voz.js';
+import { initLectura, enterReading } from './lectura.js';
+import { estaCifrado, descifrar } from './cifrado.js';
+import { initRecents, addRecent } from './recientes.js';
+import {
+  initAcciones, accionComprimir, accionProteger, accionQuitarContrasena, accionExtraer, accionMarcaDeAgua, accionNumerar,
+  accionEscanear, cambiarTema,
+} from './acciones.js';
 import { dropSource } from './preview.js';
 import { pdfToDocx, zip } from './word.js';
 import { docxToPdf } from './docx.js';
@@ -73,7 +82,8 @@ function busy(text) {
 }
 
 // ---------- Abrir documentos ----------
-async function loadSource(name, bytes) {
+async function loadSource(name, bytes, { recent = true } = {}) {
+  let password = '';
   const task = pdfjsLib.getDocument({
     data: bytes.slice(), // pdf.js transfiere el buffer al worker; guardamos el original para pdf-lib
     cMapUrl: 'vendor/cmaps/',
@@ -82,10 +92,20 @@ async function loadSource(name, bytes) {
   });
   task.onPassword = (update, reason) => {
     const pw = prompt(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? t('Contraseña incorrecta. Inténtalo de nuevo:') : t('"{nombre}" está protegido. Introduce la contraseña:', { nombre: name }));
-    if (pw == null) task.destroy(); else update(pw);
+    if (pw == null) task.destroy(); else { password = pw; update(pw); }
   };
   const pdf = await task.promise;
   const src = { id: uid('s'), name, bytes, pdf };
+  if (recent) addRecent(name, bytes, pdf.numPages);
+  // PDF protegido (con contraseña o solo con permisos): se descifra para poder editarlo y guardarlo
+  if (estaCifrado(bytes)) {
+    try {
+      src.bytes = await descifrar(bytes, password);
+      src.protegido = true;
+    } catch (err) {
+      console.warn('No se pudo descifrar el PDF (se podrá ver, pero no guardar con cambios)', err);
+    }
+  }
   state.sources.set(src.id, src);
   const pages = [];
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -180,7 +200,7 @@ const openDocument = (file, handle = null) => openFiles([file], handle);
 function startDocument(pages, name, handle) {
   deselect();
   for (const [id, s] of state.sources) {
-    if (!pages.some((p) => p.src === id)) { s.pdf.destroy?.(); state.sources.delete(id); dropSource(id); }
+    if (!pages.some((p) => p.src === id)) { s.pdf.destroy?.(); state.sources.delete(id); dropSource(id); dropImageCache(id); }
   }
   state.pages = pages;
   state.fileName = name || t('documento') + '.pdf';
@@ -242,11 +262,12 @@ async function pickAndOpen() {
 }
 
 /** Abre el selector de archivos con los tipos indicados y devuelve los elegidos (o [] si se cancela). */
-function pickFiles(accept, multiple) {
+function pickFiles(accept, multiple, camera = false) {
   return new Promise((resolve) => {
     const input = $('fileTool');
     input.accept = accept;
     input.multiple = multiple;
+    if (camera) input.setAttribute('capture', 'environment'); else input.removeAttribute('capture');
     input.value = '';
     let settled = false;
     const finish = (files) => { if (!settled) { settled = true; resolve(files); } };
@@ -258,7 +279,43 @@ function pickFiles(accept, multiple) {
 
 $('fileOpen').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) openFiles(fs); });
 $('fileInsert').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) insertPdfFiles(fs); });
-$('fileImage').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) insertImageFile(f); });
+let replacingImage = false; // el selector de imagen se abrió con «Cambiar imagen»
+$('fileImage').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  const replacing = replacingImage;
+  replacingImage = false;
+  if (!f) return;
+  if (!replacing) { insertImageFile(f); return; }
+  try {
+    replaceImage(await createAsset(await fileToDataUrl(f), f.type));
+  } catch (err) {
+    console.error(err);
+    toast(t('No se pudo cargar la imagen.'), 'error');
+  }
+});
+$('pReplaceImg').addEventListener('click', () => { replacingImage = true; $('fileImage').click(); });
+
+// Un toque con «Seleccionar» sobre una imagen del PDF (un logotipo, una foto…): se puede mover, sustituir o borrar
+let openingImage = false;
+on('image-tap', async ({ p, pt }) => {
+  if (openingImage) return;
+  openingImage = true;
+  try {
+    const m = await imageAt(p, pt);
+    if (!m || p.objects.some((o) => o.origImg?.key === m.key)) return;
+    const px = await imagePixels(p, m);
+    if (state.tool !== 'select' || state.selection || !state.pages.includes(p)) return;
+    const id = uid('a');
+    state.assets[id] = { src: px.src, mime: px.mime, w: px.w, h: px.h };
+    openImage(p, m, id);
+  } catch (err) {
+    console.warn('No se pudo seleccionar la imagen', err);
+    toast(t('No se ha podido seleccionar esta imagen.'), '', 4000);
+  } finally {
+    openingImage = false;
+  }
+});
 
 // ---------- Imágenes ----------
 function loadImage(src) {
@@ -402,6 +459,7 @@ async function saveImpl() {
         try {
           const saved = await saveToDocuments(blob, state.fileName);
           state.dirty = false;
+          addRecent(saved, new Uint8Array(await blob.arrayBuffer()), state.pages.length);
           return { title: t('Archivo guardado'), where: inDocs(saved) };
         } catch (err) {
           // Si no se puede escribir en Documentos, se ofrece guardarlo donde se quiera con el menú de compartir
@@ -446,6 +504,7 @@ async function saveImpl() {
     }
     download(blob, state.fileName);
     state.dirty = false;
+    addRecent(state.fileName, new Uint8Array(await blob.arrayBuffer()), state.pages.length);
     toast(t('PDF descargado ✓'));
   } catch (err) {
     console.error(err);
@@ -655,6 +714,15 @@ convertMenu.addEventListener('click', (e) => {
   if (c === 'word') convertToWord();
   else if (c === 'jpg' || c === 'png') convertToImages(c);
   else if (c === 'merge') $('fileInsert').click();
+  else if (c === 'reading') enterReading();
+  else if (c === 'aloud') startReading();
+  else if (c === 'compress') accionComprimir();
+  else if (c === 'protect') accionProteger();
+  else if (c === 'unprotect') accionQuitarContrasena();
+  else if (c === 'extract') accionExtraer();
+  else if (c === 'watermark') accionMarcaDeAgua();
+  else if (c === 'numbers') accionNumerar();
+  else if (c === 'theme') cambiarTema();
 });
 document.addEventListener('click', (e) => { if (!convertMenu.hidden && !convertMenu.contains(e.target)) closeConvertMenu(); });
 window.addEventListener('resize', closeConvertMenu);
@@ -680,6 +748,15 @@ document.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('cli
   } else if (act === 'pages') {
     const files = await pickFiles(ACCEPT.pdf, false);
     if (files.length && await openFiles(files)) toggleSidebar(true);
+  } else if (act === 'scan') {
+    accionEscanear();
+  } else if (act === 'read' || act === 'compress' || act === 'protect') {
+    const files = await pickFiles(ACCEPT.pdf, false);
+    if (files.length && await openFiles(files)) {
+      if (act === 'read') enterReading();
+      else if (act === 'compress') accionComprimir();
+      else accionProteger();
+    }
   }
 }));
 
@@ -728,6 +805,7 @@ const HINTS = {
   arrow: t('Arrastra para dibujar una flecha (Mayús = ángulos de 45°).'),
   whiteout: t('Arrastra para tapar contenido con un rectángulo del color elegido.'),
   picker: t('Toca la página para tomar el color de ese punto.'),
+  note: t('Toca donde quieras poner una nota o comentario.'),
 };
 
 let toolBeforePick = 'select';
@@ -795,7 +873,7 @@ const TOOL_PROPS = {
 };
 const OBJ_PROPS = {
   text: TEXT_PROPS, ink: STROKE_PROPS, line: STROKE_PROPS, arrow: STROKE_PROPS,
-  rect: [...STROKE_PROPS, 'fill'], ellipse: [...STROKE_PROPS, 'fill'], highlight: ['hlcolor'], image: ['opacity'],
+  rect: [...STROKE_PROPS, 'fill'], ellipse: [...STROKE_PROPS, 'fill'], highlight: ['hlcolor'], image: ['opacity', 'imgreplace'],
 };
 
 function updateProps() {
@@ -1167,3 +1245,47 @@ if ('launchQueue' in window) {
 
 setTool('select');
 startMonetization();
+
+// ---------- Herramientas (ver acciones.js), lectura, voz y recientes ----------
+/** Entrega un archivo creado con una herramienta: en Android, anuncio y Documentos; en el navegador, descarga. */
+async function deliverFile(blob, name, title, extra = '') {
+  if (native) {
+    await deliver(async () => {
+      try {
+        const saved = await saveToDocuments(blob, name);
+        if (/\.pdf$/i.test(saved)) addRecent(saved, new Uint8Array(await blob.arrayBuffer()));
+        return { title, where: (extra ? extra + ' · ' : '') + inDocs(saved) };
+      } catch (err) {
+        console.warn('No se pudo guardar en Documentos', err);
+        await shareNative(blob, name);
+        return null;
+      }
+    });
+  } else {
+    download(blob, name);
+    if (/\.pdf$/i.test(name)) addRecent(name, new Uint8Array(await blob.arrayBuffer()));
+    toast(title + (extra ? ' · ' + extra : '') + ' ✓', '', 5000);
+  }
+}
+
+/** Sustituye el documento abierto por otro PDF (p. ej. con la marca de agua ya puesta), sin guardar todavía. */
+async function reopen(bytes) {
+  busy(t('Abriendo…'));
+  try {
+    const name = state.fileName;
+    const pages = await loadSource(name, bytes, { recent: false });
+    state.dirty = false;
+    startDocument(pages, name, null);
+    state.dirty = true;
+  } finally {
+    busy(null);
+  }
+}
+
+initVoz({ toast, busy });
+initLectura({ toast });
+initRecents((file) => openFiles([file]));
+initAcciones({
+  makeBlob, deliverFile, reopen, toast, busy, canDownload,
+  pickFiles, openFiles: (files) => openFiles(files),
+});

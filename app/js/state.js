@@ -35,6 +35,12 @@ const STYLE_KEYS = ['family', 'bold', 'italic', 'color', 'noScale', 'opacity'];
  * no se dibuja en el PDF, no se guarda en el historial y desaparece al dejar de seleccionarla.
  */
 export function isNoopEdit(o) {
+  // Imagen del PDF original seleccionada pero sin mover, cambiar ni borrar: se queda la original
+  if (o.origImg) {
+    const g = o.origImg;
+    return !o.removed && o.asset === g.asset && (o.opacity ?? 1) === 1 &&
+      ['x', 'y', 'w', 'h'].every((k) => Math.abs(o[k] - g[k]) < 0.01);
+  }
   const b = o.base;
   if (!o.lineKey || !b || o.text !== b.text) return false;
   for (const k of NUM_KEYS) if (Math.abs((o[k] ?? 0) - (b[k] ?? 0)) > 1e-3) return false;

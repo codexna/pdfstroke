@@ -2,7 +2,7 @@
 // rectángulo encima, sino que se quita de verdad del PDF, con el mismo código que al guardar, y en pantalla se
 // sustituye sólo esa zona por la página ya modificada. Así las líneas de una tabla, los fondos de color y lo que
 // haya alrededor se ven intactos, exactamente igual que en el PDF guardado.
-import { state } from './state.js';
+import { state, isNoopEdit } from './state.js';
 import { linesSync } from './textlayer.js';
 import { coverRect, textBox, zoneParts } from './objects.js';
 import { removeTextInZones } from './textremove.js';
@@ -90,6 +90,14 @@ export function hiderSpecs(p) {
   const lines = linesSync(p) || [];
   const out = [];
   for (const o of p.objects) {
+    // Imagen del PDF original movida, cambiada o eliminada: se quita la original de su sitio
+    if (o.origImg) {
+      if (!isNoopEdit(o)) {
+        const zone = { x: o.origImg.x, y: o.origImg.y, w: o.origImg.w, h: o.origImg.h };
+        out.push({ id: o.id, o, zone, img: true, rect: grow(zone, 0.5), key: 'I' + zoneKey(zone) });
+      }
+      continue;
+    }
     // Las líneas reconocidas con OCR son parte de una imagen: no hay texto que quitar, se tapan siempre
     if (o.type !== 'text' || !o.cover || o.ocr) continue;
     if (o.annot) {
@@ -179,13 +187,13 @@ async function build(p, specs) {
   if (zoned.length) {
     const toPdf = viewToPdf(p.view, p.baseRotate || 0);
     const zones = [], owner = [];
-    zoned.forEach((s, i) => { for (const r of s.parts || [s.zone]) { zones.push(pdfZone(toPdf, r)); owner.push(i); } });
+    zoned.forEach((s, i) => { for (const r of s.parts || [s.zone]) { zones.push({ ...pdfZone(toPdf, r), img: !!s.img }); owner.push(i); } });
     try {
       removeTextInZones(tmp, page, zones);
       // Si había texto invisible (la capa de OCR de un escaneo) o el texto estaba debajo de una imagen, lo que se ve
       // allí es la imagen: quitar el texto no lo borra de la vista, así que hay que taparlo
       zoned.forEach((s, i) => {
-        if (zones.some((z, k) => owner[k] === i && (z.invisible || z.imageAfter))) failed.add(s.key);
+        if (zones.some((z, k) => owner[k] === i && (z.invisible || z.imageAfter || (z.img && !z.removedImg)))) failed.add(s.key);
       });
     } catch (err) {
       console.warn('No se pudo quitar el texto original de la vista previa', err);
@@ -197,7 +205,8 @@ async function build(p, specs) {
     data: bytes, worker: previewWorker(), cMapUrl: 'vendor/cmaps/', cMapPacked: true, standardFontDataUrl: 'vendor/standard_fonts/',
   }).promise;
   const pdfPage = await doc.getPage(1);
-  if (zoned.length) for (const k of await remainingIn(pdfPage, zoned.filter((s) => !failed.has(s.key)))) failed.add(k);
+  const textZoned = zoned.filter((s) => !s.img && !failed.has(s.key));
+  if (textZoned.length) for (const k of await remainingIn(pdfPage, textZoned)) failed.add(k);
   return { doc, page: pdfPage, failed };
 }
 

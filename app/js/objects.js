@@ -504,6 +504,7 @@ const keepsRatio = (o) => o.type === 'image';
 
 /** Tiradores disponibles para cada tipo de objeto. */
 function handleKinds(o) {
+  if (o.type === 'note') return [];
   if (o.type === 'line' || o.type === 'arrow') return ['p1', 'p2'];
   const corners = ['nw', 'ne', 'sw', 'se'];
   if (o.type === 'image' || o.type === 'ink') return corners;
@@ -555,11 +556,18 @@ function buildObjEl(o, p) {
   }
   if (o.type === 'image') {
     Object.assign(el.style, { left: o.x + 'px', top: o.y + 'px', width: o.w + 'px', height: o.h + 'px', opacity: o.opacity ?? 1 });
+    el.hidden = !!o.removed; // imagen del PDF original eliminada: no se ve, pero sigue quitando la original
     const img = document.createElement('img');
     img.src = state.assets[o.asset]?.src || '';
     img.draggable = false;
     img.alt = '';
     el.appendChild(img);
+    return el;
+  }
+  if (o.type === 'note') {
+    Object.assign(el.style, { left: o.x + 'px', top: o.y + 'px', width: o.w + 'px', height: o.h + 'px' });
+    el.title = o.text || '';
+    el.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10l-5 5H5a1 1 0 0 1-1-1z"/><path d="M15 20v-5h5M8 9h8M8 13h5"/></svg>';
     return el;
   }
   const b = getBBox(o);
@@ -572,9 +580,10 @@ function buildObjEl(o, p) {
 
 function buildCoverEl(o) {
   const c = document.createElement('div');
+  const cv = o.cover || o.imgCover;
   c.className = 'cover';
   c.dataset.for = o.id;
-  Object.assign(c.style, { left: o.cover.x + 'px', top: o.cover.y + 'px', width: o.cover.w + 'px', height: o.cover.h + 'px', background: o.cover.color });
+  Object.assign(c.style, { left: cv.x + 'px', top: cv.y + 'px', width: cv.w + 'px', height: cv.h + 'px', background: cv.color });
   return c;
 }
 
@@ -612,7 +621,7 @@ export function renderObjects(p) {
   if (editing && editing.p.uid === p.uid) finishEditing();
   layer.innerHTML = '';
   const frag = document.createDocumentFragment();
-  for (const o of p.objects) if (o.cover) frag.appendChild(buildCoverEl(o));
+  for (const o of p.objects) if (o.cover || o.imgCover) frag.appendChild(buildCoverEl(o));
   for (const o of p.objects) frag.appendChild(buildObjEl(o, p));
   layer.appendChild(frag);
   for (const o of p.objects) if (o.cover) syncCover(p, o, false);
@@ -927,6 +936,18 @@ export function onPageClick(e, pageUid) {
     }
     return;
   }
+  if (tool === 'note') {
+    if (o && o.type === 'note') { select(p.uid, o.id); emit('edit-note', { p, o }); return; }
+    const pt = toLocal(p, e.clientX, e.clientY);
+    const snap = snapshot();
+    const n = { id: uid(), type: 'note', x: Math.min(p.w - 24, Math.max(0, pt.x - 12)), y: Math.min(p.h - 24, Math.max(0, pt.y - 12)), w: 24, h: 24, text: '' };
+    p.objects.push(n);
+    renderObjects(p);
+    checkpointFrom(snap);
+    select(p.uid, n.id);
+    emit('edit-note', { p, o: n, nueva: true });
+    return;
+  }
   if (tool === 'text' || tool === 'edittext') {
     if (o && o.type === 'text') { select(p.uid, o.id); startEditing(p, o, null, e); return; }
     if (tool === 'edittext') {
@@ -1010,6 +1031,8 @@ function startMove(e, p, o, wasSelected, fromGrip = false) {
       passThroughTap(ev);
     } else if (!cancelled && wasSelected && o.type === 'text') {
       startEditing(p, o, null, ev);
+    } else if (!cancelled && wasSelected && o.type === 'note') {
+      emit('edit-note', { p, o });
     }
   });
 }
@@ -1396,7 +1419,11 @@ async function selectLineAt(p, clientX, clientY) {
       if (d <= tol && d < bestD) { best = l; bestD = d; }
     }
   }
-  if (!best) return;
+  if (!best) {
+    // Sin texto cerca: quizá es una imagen del PDF (un logotipo, una foto…), ver app.js
+    emit('image-tap', { p, pt });
+    return;
+  }
   const o = openLine(p, best.key);
   if (o) select(p.uid, o.id);
 }
@@ -1702,6 +1729,8 @@ export function deleteSelected() {
   // Una línea (o un cuadro de texto) del PDF original se vacía: su tapa la quita del documento al guardar.
   // Si se quitara el objeto, volvería a verse el texto original.
   if (sel.o.cover) normalizeRuns(sel.o, []);
+  // Una imagen del PDF original se marca como eliminada: si se quitara el objeto, volvería a verse la original
+  else if (sel.o.origImg) sel.o.removed = true;
   else sel.p.objects.splice(sel.p.objects.indexOf(sel.o), 1);
   state.selection = null;
   renderObjects(sel.p);
@@ -1723,6 +1752,9 @@ export function duplicateSelected() {
   delete c.cover;
   delete c.base;
   delete c.annot;
+  delete c.origImg;
+  delete c.imgCover;
+  delete c.removed;
   translate(c, structuredClone(c), 12, 12);
   sel.p.objects.push(c);
   renderObjects(sel.p);
@@ -1738,6 +1770,57 @@ export function nudgeSelected(dx, dy) {
   updateObjEl(sel.p, sel.o);
   renderSelection();
   checkpointFrom(snap);
+}
+
+/**
+ * Selecciona una imagen del PDF original (ver pdfimages.js): pasa a ser un objeto imagen en su mismo sitio, que se
+ * puede mover, cambiar de tamaño, sustituir o eliminar; la original se quita de la página (o se tapa si no se puede).
+ */
+export function openImage(p, m, assetId) {
+  if (p.objects.some((o) => o.origImg?.key === m.key)) return null;
+  const snap = snapshot();
+  const zone = { x: m.x, y: m.y, w: m.w, h: m.h };
+  const o = { id: uid(), type: 'image', asset: assetId, ...zone, opacity: 1, origImg: { key: m.key, asset: assetId, ...zone }, imgCover: { ...zone, color: '#ffffff' } };
+  p.objects.push(o);
+  renderObjects(p);
+  checkpointFrom(snap);
+  select(p.uid, o.id);
+  return o;
+}
+
+/** Cambia la imagen de un objeto imagen por otra, dentro de la misma caja (sin deformarla). */
+/** Cambia el texto de una nota (o la quita si se deja vacía y era nueva). */
+export function setNoteText(p, o, text, { borrar = false } = {}) {
+  const snap = snapshot();
+  if (borrar) {
+    const i = p.objects.indexOf(o);
+    if (i >= 0) p.objects.splice(i, 1);
+    state.selection = null;
+  } else {
+    o.text = text;
+  }
+  renderObjects(p);
+  renderSelection();
+  checkpointFrom(snap);
+  emit('selection');
+}
+
+export function replaceImage(assetId) {
+  const sel = selectedObject();
+  const a = state.assets[assetId];
+  if (!sel || sel.o.type !== 'image' || !a) return;
+  const snap = snapshot();
+  const o = sel.o;
+  const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  const k = Math.min(o.w / a.w, o.h / a.h);
+  o.asset = assetId;
+  o.w = a.w * k;
+  o.h = a.h * k;
+  o.x = cx - o.w / 2;
+  o.y = cy - o.h / 2;
+  renderObjects(sel.p);
+  checkpointFrom(snap);
+  select(sel.p.uid, o.id);
 }
 
 /** Inserta una imagen (o firma) centrada en la parte visible de la página actual. */

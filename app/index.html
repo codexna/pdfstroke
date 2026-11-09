@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="no-doc tool-select">
+<script>try { var th = localStorage.getItem('editorpdf.tema'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}</script>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
@@ -61,6 +62,23 @@
     <symbol id="i-word" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="m7.5 12 1.7 6 2.8-5 2.8 5 1.7-6"/></symbol>
     <symbol id="i-pro" viewBox="0 0 24 24"><path d="m3 8 3.5 10h11L21 8l-5.5 3.5L12 5l-3.5 6.5z"/></symbol>
     <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2 9 5M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h5v17H6a2 2 0 0 0-2 2z"/><path d="M20 5a2 2 0 0 0-2-2h-5v17h5a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 7.5-2"/></symbol>
+    <symbol id="i-compress" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M8.5 8.5 20 19M8.5 15.5 20 5"/></symbol>
+    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M5 19 19 5"/><path d="M4 12h3M17 12h3M12 4v3M12 17v3"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10l-5 5H5a1 1 0 0 1-1-1z"/><path d="M15 20v-5h5M8 9h8M8 13h5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-skip-back" viewBox="0 0 24 24"><path d="M18 5v14L8 12zM6 5v14"/></symbol>
+    <symbol id="i-skip-fwd" viewBox="0 0 24 24"><path d="M6 5v14l10-7zM18 5v14"/></symbol>
+    <symbol id="i-voice" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
   </defs>
 </svg>
 
@@ -79,7 +97,7 @@
   </div>
   <button class="icon-btn needs-doc" id="btnSearch" title="Buscar (Ctrl+F)"><svg><use href="#i-search"/></svg></button>
   <button class="icon-btn" id="btnOpen" title="Abrir PDF (Ctrl+O)"><svg><use href="#i-open"/></svg></button>
-  <button class="icon-btn needs-doc" id="btnConvert" title="Convertir (a Word, a imagen) y unir"><svg><use href="#i-convert"/></svg></button>
+  <button class="icon-btn needs-doc" id="btnConvert" title="Leer, convertir y más herramientas"><svg><use href="#i-convert"/></svg></button>
   <button class="icon-btn needs-doc" id="btnShare" title="Compartir" hidden><svg><use href="#i-share"/></svg></button>
   <button class="icon-btn only-native pro-btn" id="btnPro" title="PDF Stroke Pro"><svg><use href="#i-pro"/></svg></button>
   <button class="btn primary needs-doc" id="btnSave" title="Guardar (Ctrl+S)"><svg><use href="#i-save"/></svg><span>Guardar</span></button>
@@ -100,6 +118,7 @@
   <button data-tool="fill"><svg><use href="#i-fill"/></svg><span>Rellenar</span></button>
   <button data-tool="image"><svg><use href="#i-image"/></svg><span>Imagen</span></button>
   <button data-tool="sign"><svg><use href="#i-sign"/></svg><span>Firma</span></button>
+  <button data-tool="note"><svg><use href="#i-note"/></svg><span>Nota</span></button>
 </nav>
 
 <div class="propsbar needs-doc" id="props">
@@ -132,6 +151,7 @@
     <button data-c="#ffadd2" style="--c:#ffadd2" title="Rosa"></button>
     <button data-c="#ffc078" style="--c:#ffc078" title="Naranja"></button>
   </div>
+  <button class="prop btn ghost" data-prop="imgreplace" id="pReplaceImg" title="Cambiar por otra imagen"><svg><use href="#i-image"/></svg><span>Cambiar imagen</span></button>
   <div class="spacer"></div>
   <button class="prop btn ghost" data-prop="selected" id="pDuplicate" title="Duplicar"><svg><use href="#i-copy"/></svg><span>Duplicar</span></button>
   <button class="prop btn ghost danger" data-prop="selected" id="pDelete" title="Eliminar (Supr)"><svg><use href="#i-trash"/></svg><span>Eliminar</span></button>
@@ -168,6 +188,14 @@
           <button data-start="pdf2word"><svg><use href="#i-word"/></svg><span>PDF a Word</span></button>
           <button data-start="img2pdf"><svg><use href="#i-image"/></svg><span>Imagen a PDF</span></button>
           <button data-start="pdf2img"><svg><use href="#i-image"/></svg><span>PDF a imagen</span></button>
+          <button data-start="scan"><svg><use href="#i-camera"/></svg><span>Escanear documento</span></button>
+          <button data-start="read"><svg><use href="#i-book"/></svg><span>Leer PDF</span></button>
+          <button data-start="compress"><svg><use href="#i-compress"/></svg><span>Comprimir PDF</span></button>
+          <button data-start="protect"><svg><use href="#i-lock"/></svg><span>Proteger con contraseña</span></button>
+        </div>
+        <div class="recents" id="recents" hidden>
+          <h2>Recientes</h2>
+          <div class="recent-list" id="recentList"></div>
         </div>
         <p class="drop-hint hide-sm">o arrastra aquí un PDF, imágenes o un Word</p>
       </div>
@@ -277,10 +305,89 @@
 <input type="file" id="fileInsert" accept="application/pdf,.pdf,image/*,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
 <input type="file" id="fileTool" hidden>
 <div class="menu" id="convertMenu" hidden>
+  <div class="menu-sec">Leer</div>
+  <button data-conv="reading"><svg><use href="#i-book"/></svg><span>Modo lectura</span></button>
+  <button data-conv="aloud"><svg><use href="#i-speaker"/></svg><span>Leer en voz alta</span></button>
+  <div class="menu-sec">Convertir</div>
   <button data-conv="word"><svg><use href="#i-word"/></svg><span>PDF a Word <small>.docx</small></span></button>
   <button data-conv="jpg"><svg><use href="#i-image"/></svg><span>PDF a imagen <small>JPG</small></span></button>
   <button data-conv="png"><svg><use href="#i-image"/></svg><span>PDF a imagen <small>PNG</small></span></button>
   <button data-conv="merge"><svg><use href="#i-merge"/></svg><span>Unir con otros PDF, imágenes o Word</span></button>
+  <div class="menu-sec">Herramientas</div>
+  <button data-conv="compress"><svg><use href="#i-compress"/></svg><span>Comprimir PDF</span></button>
+  <button data-conv="protect"><svg><use href="#i-lock"/></svg><span>Proteger con contraseña</span></button>
+  <button data-conv="unprotect"><svg><use href="#i-unlock"/></svg><span>Quitar contraseña</span></button>
+  <button data-conv="extract"><svg><use href="#i-scissors"/></svg><span>Extraer o dividir páginas</span></button>
+  <button data-conv="watermark"><svg><use href="#i-stamp"/></svg><span>Marca de agua</span></button>
+  <button data-conv="numbers"><svg><use href="#i-hash"/></svg><span>Numerar páginas</span></button>
+  <div class="menu-sec">Apariencia</div>
+  <button data-conv="theme"><svg><use href="#i-moon"/></svg><span id="themeLabel">Tema: automático</span></button>
+</div>
+
+<div class="modal" id="toolModal" hidden>
+  <div class="modal-card tool-card">
+    <div class="modal-head">
+      <strong id="toolTitle"></strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="toolClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="tool-body" id="toolBody"></div>
+    <p class="small dsig-status" id="toolStatus"></p>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn ghost" id="toolCancel">Cancelar</button>
+      <button class="btn primary" id="toolOk">Aceptar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="noteModal" hidden>
+  <div class="modal-card tool-card">
+    <div class="modal-head">
+      <strong>Nota</strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="noteClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <textarea id="noteText" rows="6" placeholder="Escribe tu nota o comentario"></textarea>
+    <div class="modal-foot">
+      <button class="btn ghost danger" id="noteDelete">Eliminar</button>
+      <div class="spacer"></div>
+      <button class="btn primary" id="noteOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="voiceModal" hidden>
+  <div class="modal-card tool-card">
+    <div class="modal-head">
+      <strong>Voz de lectura</strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="voiceClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <div class="voice-list" id="voiceList"></div>
+    <button class="btn" id="voiceMore">Descargar más voces (de calidad alta)…</button>
+  </div>
+</div>
+
+<div class="tts-bar" id="ttsBar" hidden>
+  <button class="icon-btn" id="ttsClose" title="Dejar de leer"><svg><use href="#i-close"/></svg></button>
+  <button class="icon-btn" id="ttsPrev" title="Frase anterior"><svg><use href="#i-skip-back"/></svg></button>
+  <button class="icon-btn tts-play" id="ttsPlay" title="Leer"><svg class="i-play"><use href="#i-play"/></svg><svg class="i-pause"><use href="#i-pause"/></svg></button>
+  <button class="icon-btn" id="ttsNext" title="Frase siguiente"><svg><use href="#i-skip-fwd"/></svg></button>
+  <button class="tts-rate" id="ttsRate" title="Velocidad">1×</button>
+  <button class="icon-btn" id="ttsVoice" title="Elegir la voz"><svg><use href="#i-voice"/></svg></button>
+</div>
+
+<div class="read-top" id="readTop">
+  <button class="icon-btn" id="readExit" title="Salir del modo lectura"><svg><use href="#i-arrow-left"/></svg></button>
+  <div class="read-title" id="readTitle"></div>
+  <button class="icon-btn" id="readAloud" title="Leer en voz alta"><svg><use href="#i-speaker"/></svg></button>
+  <button class="icon-btn" id="readTheme" title="Fondo"><svg><use href="#i-moon"/></svg></button>
+</div>
+<div class="read-bottom" id="readBottom">
+  <button class="icon-btn" id="readPrev" title="Página anterior"><svg><use href="#i-prev"/></svg></button>
+  <span id="readPage"></span>
+  <button class="icon-btn" id="readNext" title="Página siguiente"><svg><use href="#i-next"/></svg></button>
 </div>
 <input type="file" id="fileImage" accept="image/*" hidden>
 

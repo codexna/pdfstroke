@@ -8,7 +8,7 @@ import { toPdfText } from './pdftext.js';
 import { viewToPdf, pdfZone, lineSpec, failedKeys, annotIndexes, removeAnnotsAt } from './preview.js';
 
 const {
-  PDFDocument, PDFPage, PDFName, PDFDict, PDFArray, PDFNumber, PDFStream, PDFRef,
+  PDFDocument, PDFPage, PDFName, PDFDict, PDFArray, PDFNumber, PDFStream, PDFRef, PDFHexString, PDFString,
   StandardFonts: SF, rgb, degrees, toRadians, BlendMode, LineCapStyle, LineJoinStyle,
   pushGraphicsState, popGraphicsState, setCharacterSqueeze, setLineJoin, setGraphicsState, beginText, endText,
   setFontAndSize, setFillingColor, showText, rotateAndSkewTextRadiansAndTranslate,
@@ -361,6 +361,25 @@ export async function buildPdf() {
     if (annotIdx[i].length) removeAnnotsAt(finalPages[i].node, annotIdx[i]);
   }
 
+  // Imágenes del PDF original movidas, sustituidas o eliminadas: se quita la original. Si no se encuentra (p. ej. una
+  // imagen dentro del contenido de otra forma), se tapa con blanco
+  const imgCovers = new Map(); // página -> zonas que tapar
+  for (let i = 0; i < state.pages.length; i++) {
+    const p = state.pages[i];
+    if (p.src == null) continue;
+    const objs = p.objects.filter((o) => o.origImg && !isNoopEdit(o));
+    if (!objs.length) continue;
+    const toPdf = viewToPdf(p.view, p.baseRotate || 0);
+    const zs = objs.map((o) => ({ ...pdfZone(toPdf, o.origImg), img: true }));
+    try {
+      removeTextInZones(out, finalPages[i], zs);
+    } catch (err) {
+      console.warn(`Página ${i + 1}: la imagen original queda tapada`, err);
+    }
+    const bad = objs.filter((o, k) => !zs[k].removedImg).map((o) => o.origImg);
+    if (bad.length) imgCovers.set(p, bad);
+  }
+
   // El texto original que no se pudo quitar del todo (p. ej. si está dentro de un formulario XObject) se tapa con
   // el color del fondo, como se ve en pantalla. El que sí se quitó no se tapa: así no se borra nada de alrededor
   // (las líneas de una tabla, un fondo de color...)
@@ -413,7 +432,7 @@ export async function buildPdf() {
     const page = finalPages[i];
     const R = p.baseRotate || 0;
     page.setRotation(degrees((R + p.rotation) % 360));
-    if (!p.objects.some((o) => !isNoopEdit(o))) continue;
+    if (!p.objects.some((o) => !isNoopEdit(o)) && !imgCovers.has(p)) continue;
 
     const P = viewToPdf(p.view, R);
     const fmt = (x, y) => { const [X, Y] = P(x, y); return `${X.toFixed(3)} ${(-Y).toFixed(3)}`; };
@@ -431,6 +450,7 @@ export async function buildPdf() {
     const objects = p.objects.filter((o) => !isNoopEdit(o));
 
     // Las tapas del texto original que no se pudo quitar van debajo de todo lo demás
+    for (const r of imgCovers.get(p) || []) draw(poly(rectPts(r), true), { color: rgb(1, 1, 1), borderWidth: 0 });
     for (const o of objects) {
       if (mustCover.has(o)) for (const r of partsOf(o, p)) draw(poly(rectPts(r), true), { color: color(o.cover.color), borderWidth: 0 });
     }
@@ -504,7 +524,7 @@ export async function buildPdf() {
         }
         case 'image': {
           const a = state.assets[o.asset];
-          if (!a) break;
+          if (!a || o.removed) break;
           if (!images[o.asset]) {
             const bytes = dataUrlToBytes(a.src);
             images[o.asset] = a.mime === 'image/jpeg' ? await out.embedJpg(bytes) : await out.embedPng(bytes);
@@ -536,6 +556,19 @@ export async function buildPdf() {
           if (o.fill) Object.assign(opts, { color: color(o.fill), opacity: op });
           if (o.color && o.width) Object.assign(opts, { borderColor: color(o.color), borderWidth: o.width, borderOpacity: op });
           if (opts.color || opts.borderColor) draw(d, opts);
+          break;
+        }
+        case 'note': {
+          // Nota (comentario) como anotación de texto del PDF: Acrobat y los demás lectores la muestran como un icono
+          const [X, Y] = P(o.x, o.y);
+          const [X2, Y2] = P(o.x + o.w, o.y + o.h);
+          const annot = out.context.obj({
+            Type: 'Annot', Subtype: 'Text', Name: 'Comment', Open: false, F: 4,
+            Rect: [Math.min(X, X2), Math.min(Y, Y2), Math.max(X, X2), Math.max(Y, Y2)],
+            Contents: PDFHexString.fromText(o.text || ''), T: PDFHexString.fromText('PDF Stroke'),
+            M: PDFString.fromDate(new Date()), C: [1, 0.84, 0.31],
+          });
+          page.node.addAnnot(out.context.register(annot));
           break;
         }
         case 'ink':
