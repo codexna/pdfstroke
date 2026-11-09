@@ -194,6 +194,7 @@
     </div>
     <div class="saved-signs" id="savedSigns"></div>
     <p class="muted small">Dibuja tu firma con el dedo, el lápiz o el ratón.</p>
+    <button class="btn ghost dsig-link" id="signDigital"><svg><use href="#i-sign"/></svg><span>Firma digital con certificado (.p12 / .pfx)</span></button>
     <canvas id="signPad"></canvas>
     <div class="modal-foot">
       <div class="swatches" id="signColors">
@@ -218,6 +219,30 @@
   </div>
 </div>
 
+<div class="modal" id="dsigModal" hidden>
+  <div class="modal-card dsig-card">
+    <div class="modal-head">
+      <strong>Firma digital</strong>
+      <div class="spacer"></div>
+      <button class="icon-btn sm" id="dsigClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <p class="muted small">Firma el documento con tu certificado digital (archivo .p12 o .pfx, como el de la FNMT). Cualquiera podrá comprobar quién lo ha firmado y que no se ha modificado después. El certificado y la contraseña no salen de tu dispositivo ni se guardan.</p>
+    <div class="dsig-row">
+      <button class="btn" id="dsigPick">Elegir certificado…</button>
+      <span class="muted small dsig-file" id="dsigFile">Ningún certificado elegido</span>
+    </div>
+    <input type="file" id="dsigInput" accept=".p12,.pfx,application/x-pkcs12,application/octet-stream" hidden>
+    <label class="dsig-field"><span>Contraseña del certificado</span><input type="password" id="dsigPass" autocomplete="off"></label>
+    <label class="dsig-field"><span>Motivo (opcional)</span><input type="text" id="dsigReason" maxlength="120" placeholder="Conforme"></label>
+    <label class="dsig-check"><input type="checkbox" id="dsigVisible" checked><span>Añadir un sello visible en la última página</span></label>
+    <p class="small dsig-status" id="dsigStatus"></p>
+    <div class="modal-foot">
+      <div class="spacer"></div>
+      <button class="btn primary" id="dsigOk">Firmar y guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="proModal" hidden>
   <div class="modal-card pro-card">
     <div class="modal-head">
@@ -231,7 +256,8 @@
       <li>Guarda, comparte y convierte (Word, imagen) sin límite</li>
     </ul>
     <div class="pro-plans">
-      <button class="btn primary big" id="proBuyYearly"><span>Anual</span><small id="proYearly">7,99 € al año</small></button>
+      <button class="btn primary big" id="proBuyYearly"><span>Anual</span><small id="proYearly">4,99 € al año</small></button>
+      <button class="btn big" id="proBuyLifetime"><span>De por vida</span><small id="proLifetime">8,99 € pago único</small></button>
       <button class="btn big" id="proBuyMonthly"><span>Mensual</span><small id="proMonthly">0,99 € al mes</small></button>
     </div>
     <p class="muted small" id="proStatus"></p>
@@ -240,7 +266,7 @@
       <button class="btn ghost" id="proManage" hidden>Gestionar suscripción</button>
       <button class="btn ghost" id="proPrivacy">Privacidad de los anuncios</button>
     </div>
-    <p class="muted small">La suscripción se renueva automáticamente. Puedes cancelarla cuando quieras en Google Play.</p>
+    <p class="muted small">La suscripción se renueva automáticamente. Puedes cancelarla cuando quieras en Google Play. El pago de por vida es único y no se renueva.</p>
   </div>
 </div>
 

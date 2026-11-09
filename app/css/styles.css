@@ -407,6 +407,17 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .pro-card { max-width: 420px; }
 .pro-reason { margin: 4px 0 10px; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--text); font-size: 14px; }
 .pro-list { margin: 6px 0 14px; padding-left: 20px; line-height: 1.7; }
+.dsig-link { width: 100%; justify-content: center; margin: 4px 0 8px; color: var(--accent); }
+.dsig-link svg { width: 18px; height: 18px; }
+.dsig-card { width: min(480px, 100%); display: flex; flex-direction: column; gap: 10px; }
+.dsig-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dsig-file { overflow-wrap: anywhere; }
+.dsig-field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.dsig-field input { height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: 16px; }
+.dsig-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.dsig-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.dsig-status { min-height: 1.2em; margin: 0; }
+.dsig-status.error { color: #c62828; }
 .pro-plans { display: flex; flex-direction: column; gap: 8px; }
 .pro-plans .btn { flex-direction: column; align-items: center; gap: 2px; }
 .pro-plans small { font-weight: 400; opacity: .85; }

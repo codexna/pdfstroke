@@ -18,6 +18,7 @@ import { ocrAvailable, prepareOcr, recognizePage } from './ocr.js';
 import { buildPdf, replacedChars, flattenedFields } from './exporter.js';
 import { renderThumbs, addBlankPage, insertPagesAfterCurrent, blankPage } from './thumbs.js';
 import { askSignature } from './signature.js';
+import { abrirCertificado, firmarPdf } from './firma-digital.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
 
@@ -466,6 +467,83 @@ async function shareImpl() {
 }
 const save = oneAtATime(saveImpl);
 const share = oneAtATime(shareImpl);
+
+// ---------- Firma digital con certificado (.p12 / .pfx) ----------
+let dsigCert = null; // archivo del certificado elegido (solo en memoria, mientras la app está abierta)
+const dsigStatus = (msg, error = false) => {
+  $('dsigStatus').textContent = msg || '';
+  $('dsigStatus').classList.toggle('error', error);
+};
+function openDigitalSign() {
+  if (!state.pages.length) return;
+  dsigStatus('');
+  $('dsigModal').hidden = false;
+}
+$('signDigital').addEventListener('click', openDigitalSign);
+$('dsigClose').addEventListener('click', () => { $('dsigModal').hidden = true; $('dsigPass').value = ''; });
+$('dsigPick').addEventListener('click', () => $('dsigInput').click());
+$('dsigPass').addEventListener('input', () => dsigStatus(''));
+$('dsigInput').addEventListener('change', () => {
+  const f = $('dsigInput').files[0];
+  $('dsigInput').value = '';
+  if (!f) return;
+  dsigCert = f;
+  $('dsigFile').textContent = f.name;
+  dsigStatus('');
+});
+
+async function digitalSignImpl() {
+  if (!dsigCert) return dsigStatus(t('Elige primero tu certificado (.p12 o .pfx).'), true);
+  let firma;
+  try {
+    dsigStatus(t('Abriendo el certificado…'));
+    firma = await abrirCertificado(new Uint8Array(await dsigCert.arrayBuffer()), $('dsigPass').value);
+  } catch (err) {
+    return dsigStatus(err?.message || String(err), true);
+  }
+  if (firma.caducado) {
+    return dsigStatus(t('El certificado no es válido en esta fecha (válido del {desde} al {hasta}).', {
+      desde: firma.desde.toLocaleDateString(), hasta: firma.hasta.toLocaleDateString(),
+    }), true);
+  }
+  dsigStatus(t('Certificado de {nombre}', { nombre: firma.nombre }));
+  if (native && !(await canDownload())) return;
+  $('dsigModal').hidden = true;
+  $('dsigPass').value = '';
+  try {
+    const blob = await makeBlob();
+    busy(t('Firmando…'));
+    let bytes;
+    try {
+      bytes = await firmarPdf(new Uint8Array(await blob.arrayBuffer()), firma, {
+        motivo: $('dsigReason').value.trim(), visible: $('dsigVisible').checked,
+      });
+    } finally {
+      busy(null);
+    }
+    const name = t('{nombre} (firmado).pdf', { nombre: state.fileName.replace(/\.pdf$/i, '') });
+    const out = new Blob([bytes], { type: 'application/pdf' });
+    if (native) {
+      await deliver(async () => {
+        try {
+          const saved = await saveToDocuments(out, name);
+          return { title: t('Documento firmado'), where: inDocs(saved) };
+        } catch (err) {
+          console.warn('No se pudo guardar en Documentos', err);
+          await shareNative(out, name);
+          return null;
+        }
+      });
+    } else {
+      download(out, name);
+      toast(t('PDF firmado descargado ✓'));
+    }
+  } catch (err) {
+    if (!/cancel/i.test(err?.message || '')) toast(t('No se pudo firmar:') + ' ' + (err?.message || err), 'error');
+  }
+}
+$('dsigOk').addEventListener('click', oneAtATime(digitalSignImpl));
+$('dsigModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) $('dsigClose').click(); });
 
 if (native || navigator.canShare?.({ files: [new File([''], 'a.pdf', { type: 'application/pdf' })] })) $('btnShare').hidden = false;
 

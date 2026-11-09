@@ -97,6 +97,8 @@ function close(result) {
 }
 
 document.getElementById('signClose').addEventListener('click', () => close(null));
+// «Firma digital con certificado»: se cierra esta ventana y app.js abre la de la firma digital
+document.getElementById('signDigital').addEventListener('click', () => close(null));
 document.getElementById('signClear').addEventListener('click', setup);
 document.getElementById('signOk').addEventListener('click', () => {
   const src = hasInk ? trimmed() : null;

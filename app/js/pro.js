@@ -17,10 +17,17 @@ const ADMOB_APERTURA = 'ca-app-pub-7863177549007991/1315248291';
 const APERTURA_DE_PRUEBA = 'ca-app-pub-3940256099942544/9257395921';
 const APERTURA_ESPERA_MAX = 4000; // ms: si el anuncio tarda más en cargar, no se muestra (no se hace esperar)
 const APERTURA_AL_VOLVER = 30 * 60 * 1000; // ms fuera de la app para volver a mostrarlo al regresar
+const INTERSTICIAL_ESPERA_MAX = 6000; // ms: al guardar, cuánto se espera (con la rueda girando) a que cargue el anuncio
 let testAds = ANUNCIOS_DE_PRUEBA;
 // Suscripción creada en la Play Console: producto "pro" con dos planes base, "mensual" y "anual"
 const PRODUCTO = 'pro';
-const PLANES = { mensual: t('{precio} al mes', { precio: '0,99 €' }), anual: t('{precio} al año', { precio: '7,99 €' }) }; // precios de reserva si Google Play no responde
+// Pago único (producto integrado "pro_vida", no consumible): Pro para siempre
+const VIDA = 'pro_vida';
+const PLANES = { // precios de reserva si Google Play no responde
+  mensual: t('{precio} al mes', { precio: '0,99 €' }),
+  anual: t('{precio} al año', { precio: '4,99 €' }),
+  vida: t('{precio} pago único', { precio: '8,99 €' }),
+};
 export const DESCARGAS_GRATIS = 3; // por día
 
 const cap = window.Capacitor?.isNativePlatform?.() ? window.Capacitor : null;
@@ -34,18 +41,21 @@ const store = {
 };
 
 let pro = store.get('editorpdf.pro', false);
+let proVida = store.get('editorpdf.proVida', false); // Pro comprado de por vida (no hay suscripción que gestionar)
 let adReady = false;
 let adsStarted = null;
+let preparing = null; // carga del anuncio intersticial en curso
 let showingAd = false; // hay un anuncio a pantalla completa abierto
-let lastAdClosed = 0; // cuándo se cerró el último (para no encadenar dos anuncios seguidos)
 
 /** ¿Tiene la suscripción Pro? (en la versión web, todo está disponible) */
 export const isPro = () => !cap || pro;
 export const isNativeApp = () => !!cap;
 
-function setPro(v) {
+function setPro(v, vida = false) {
   pro = !!v;
+  proVida = pro && vida;
   store.set('editorpdf.pro', pro);
+  store.set('editorpdf.proVida', proVida);
   document.body.classList.toggle('is-pro', pro);
 }
 
@@ -54,8 +64,13 @@ function setPro(v) {
 export async function checkPro() {
   if (!Billing) return isPro();
   try {
-    const { purchases } = await Billing.getPurchases({ productType: 'subs', onlyCurrentEntitlements: true });
-    setPro(purchases.some((t) => t.productIdentifier === PRODUCTO && (t.purchaseState === '1' || t.isActive)));
+    const valida = (t) => t.purchaseState === '1' || t.isActive;
+    const [subs, inapp] = await Promise.all([
+      Billing.getPurchases({ productType: 'subs', onlyCurrentEntitlements: true }),
+      Billing.getPurchases({ productType: 'inapp', onlyCurrentEntitlements: true }),
+    ]);
+    const vida = inapp.purchases.some((t) => t.productIdentifier === VIDA && valida(t));
+    setPro(vida || subs.purchases.some((t) => t.productIdentifier === PRODUCTO && valida(t)), vida);
   } catch (err) {
     console.warn('No se pudo comprobar la suscripción', err); // sin conexión: se mantiene lo último que se supo
   }
@@ -71,13 +86,17 @@ async function prices() {
       if (p.planIdentifier === 'anual') out.anual = t('{precio} al año', { precio: p.priceString });
     }
   } catch (err) { console.warn('Precios no disponibles', err); }
+  try {
+    const { products } = await Billing.getProducts({ productIdentifiers: [VIDA], productType: 'inapp' });
+    if (products[0]?.priceString) out.vida = t('{precio} pago único', { precio: products[0].priceString });
+  } catch (err) { console.warn('Precio de por vida no disponible', err); }
   return out;
 }
 
 async function buy(plan) {
-  await Billing.purchaseProduct({
-    productIdentifier: PRODUCTO, planIdentifier: plan, productType: 'subs', autoAcknowledgePurchases: true,
-  });
+  await Billing.purchaseProduct(plan === 'vida'
+    ? { productIdentifier: VIDA, productType: 'inapp', autoAcknowledgePurchases: true }
+    : { productIdentifier: PRODUCTO, planIdentifier: plan, productType: 'subs', autoAcknowledgePurchases: true });
   await checkPro();
 }
 
@@ -93,10 +112,10 @@ export function showPro(motivo = '') {
     $('proReason').hidden = !motivo;
     $('proStatus').textContent = pro ? t('Ya tienes PDF Stroke Pro. ¡Gracias!') : '';
     modal.querySelector('.pro-plans').hidden = pro;
-    $('proManage').hidden = !pro;
+    $('proManage').hidden = !pro || proVida;
     $('proPrivacy').hidden = pro || !AdMob;
     modal.hidden = false;
-    prices().then((p) => { $('proMonthly').textContent = p.mensual; $('proYearly').textContent = p.anual; });
+    prices().then((p) => { $('proMonthly').textContent = p.mensual; $('proYearly').textContent = p.anual; $('proLifetime').textContent = p.vida; });
     const close = () => {
       modal.hidden = true;
       for (const [id, fn] of handlers) $(id).removeEventListener('click', fn);
@@ -123,6 +142,7 @@ export function showPro(motivo = '') {
     const handlers = [
       ['proBuyMonthly', attempt(() => buy('mensual'))],
       ['proBuyYearly', attempt(() => buy('anual'))],
+      ['proBuyLifetime', attempt(() => buy('vida'))],
       ['proRestore', attempt(async () => { await Billing.restorePurchases(); await checkPro(); })],
       ['proManage', () => Billing.manageSubscriptions().catch(() => {})],
       ['proPrivacy', () => privacyOptions()],
@@ -170,15 +190,26 @@ export function countDownload() {
 }
 
 // ---------- Anuncios ----------
-async function prepareAd() {
-  if (!AdMob || pro) return;
-  try {
-    await AdMob.prepareInterstitial({ adId: testAds ? INTERSTICIAL_DE_PRUEBA : ADMOB_INTERSTICIAL, isTesting: testAds });
-    adReady = true;
-  } catch (err) {
-    adReady = false;
-    console.warn('Anuncio no disponible', err);
-  }
+function prepareAd() {
+  if (!AdMob || pro || adReady) return Promise.resolve();
+  preparing ||= (async () => {
+    try {
+      await AdMob.prepareInterstitial({ adId: testAds ? INTERSTICIAL_DE_PRUEBA : ADMOB_INTERSTICIAL, isTesting: testAds });
+      adReady = true;
+    } catch (err) {
+      adReady = false;
+      console.warn('Anuncio no disponible', err);
+    } finally {
+      preparing = null;
+    }
+  })();
+  return preparing;
+}
+
+/** Rueda girando a pantalla completa (la misma de «Procesando…») mientras se espera al anuncio. */
+function waiting(on) {
+  $('busyText').textContent = on ? t('Un momento…') : '';
+  $('busy').hidden = !on;
 }
 
 /** Espera a que se cierre un anuncio a pantalla completa (o a que falle); `show` lo muestra. */
@@ -194,7 +225,6 @@ async function untilClosed(show, closedEvents) {
     });
   } finally {
     showingAd = false;
-    lastAdClosed = Date.now();
     for (const h of handles) Promise.resolve(h).then((x) => x?.remove?.()).catch(() => {});
   }
 }
@@ -218,10 +248,21 @@ async function showAppOpen() {
 
 async function showInterstitial() {
   if (!AdMob || pro) return;
-  await adsStarted;
-  if (!adReady) return prepareAd(); // sin anuncio cargado (sin conexión...): no se espera; se prepara el siguiente
-  // Recién visto el de apertura (o con otro abierto): no se encadena otro anuncio
-  if (showingAd || Date.now() - lastAdClosed < 30000) return;
+  if (!adReady) {
+    // Aún no está cargado: se espera unos segundos con la rueda girando. Si no llega (sin conexión...), se guarda
+    // sin anuncio y se sigue cargando para la próxima vez.
+    waiting(true);
+    try {
+      await Promise.race([
+        (async () => { await adsStarted; await prepareAd(); })(),
+        new Promise((r) => setTimeout(r, INTERSTICIAL_ESPERA_MAX)),
+      ]);
+    } finally {
+      waiting(false);
+    }
+    if (!adReady) return;
+  }
+  if (showingAd) return; // ya hay otro anuncio abierto
   adReady = false;
   // showInterstitial() termina al aparecer el anuncio: se espera a que el usuario lo cierre (o a que falle)
   try {
