@@ -193,6 +193,7 @@
           <button data-start="compress"><svg><use href="#i-compress"/></svg><span>Comprimir PDF</span></button>
           <button data-start="protect"><svg><use href="#i-lock"/></svg><span>Proteger con contraseña</span></button>
         </div>
+        <div class="web-ad" id="adInicio" hidden></div>
         <div class="recents" id="recents" hidden>
           <h2>Recientes</h2>
           <div class="recent-list" id="recentList"></div>
@@ -243,6 +244,7 @@
     <h2 id="savedTitle">Archivo guardado</h2>
     <p class="saved-where" id="savedWhere"></p>
     <p class="muted" id="savedLeft" hidden></p>
+    <div class="web-ad" id="adDescarga" hidden></div>
     <button class="btn primary big" id="savedOk">Aceptar</button>
   </div>
 </div>
@@ -287,6 +289,14 @@
       <button class="btn primary big" id="proBuyYearly"><span>Anual</span><small id="proYearly">4,99 € al año</small></button>
       <button class="btn big" id="proBuyLifetime"><span>De por vida</span><small id="proLifetime">8,99 € pago único</small></button>
       <button class="btn big" id="proBuyMonthly"><span>Mensual</span><small id="proMonthly">0,99 € al mes</small></button>
+    </div>
+    <div class="pro-web" id="proWeb" hidden>
+      <button class="btn primary big" id="proWebBuy"><span>Comprar Pro para el navegador</span><small>Pago seguro con Lemon Squeezy</small></button>
+      <div class="pro-web-key" id="proWebKey">
+        <input id="proWebCode" type="text" autocomplete="off" placeholder="Código de licencia">
+        <button class="btn" id="proWebActivate">Activar</button>
+      </div>
+      <button class="btn big" id="proWebApp"><span>App para Android</span><small>Pro mensual, anual o de por vida en Google Play</small></button>
     </div>
     <p class="muted small" id="proStatus"></p>
     <div class="modal-foot">

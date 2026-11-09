@@ -53,7 +53,7 @@ export async function accionComprimir() {
     <label class="choice"><input type="radio" name="nivel" value="alta"> ${esc(t('Máxima: el archivo más pequeño'))}</label>`, { ok: t('Comprimir') });
   if (!f) return;
   const nivel = radio(f, 'nivel');
-  if (cap && !(await app.canDownload())) return;
+  if (!(await app.canDownload())) return;
   try {
     const blob = await app.makeBlob();
     app.busy(t('Comprimiendo…'));
@@ -91,7 +91,7 @@ export async function accionProteger() {
   if (!f) return;
   const pw = val(f, 'pw').value;
   val(f, 'pw').value = val(f, 'pw2').value = '';
-  if (cap && !(await app.canDownload())) return;
+  if (!(await app.canDownload())) return;
   try {
     const blob = await app.makeBlob();
     app.busy(t('Cifrando…'));
@@ -106,7 +106,7 @@ export async function accionProteger() {
 export async function accionQuitarContrasena() {
   const protegido = [...state.sources.values()].some((s) => s.protegido);
   if (!protegido) { app.toast(t('Este PDF no tiene contraseña.')); return; }
-  if (cap && !(await app.canDownload())) return;
+  if (!(await app.canDownload())) return;
   try {
     const blob = await app.makeBlob();
     await app.deliverFile(blob, t('{nombre} (sin contraseña).pdf', { nombre: base() }), t('Contraseña quitada'));
@@ -129,7 +129,7 @@ export async function accionExtraer() {
   if (!f) return;
   const modo = radio(f, 'modo');
   const rangos = val(f, 'rangos').value;
-  if (cap && !(await app.canDownload())) return;
+  if (!(await app.canDownload())) return;
   try {
     const blob = await app.makeBlob();
     const bytes = new Uint8Array(await blob.arrayBuffer());

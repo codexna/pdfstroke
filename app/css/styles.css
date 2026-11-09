@@ -508,3 +508,16 @@ body.reading.tts-on .read-bottom { display: none; }
 .recent .r-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .recent .r-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .recent .icon-btn { flex: none; }
+
+/* ---------- Pro en la web y anuncios de AdSense ---------- */
+.pro-web { display: flex; flex-direction: column; gap: 8px; }
+.pro-web[hidden] { display: none; }
+.pro-web .btn.big { flex-direction: column; align-items: center; gap: 2px; }
+.pro-web small { font-weight: 400; opacity: .85; }
+.pro-web-key { display: flex; gap: 8px; }
+.pro-web-key[hidden] { display: none; }
+.pro-web-key input { flex: 1; min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: inherit; font-size: 16px; color: inherit; }
+#proModal.web .modal-card > p.muted.small:last-child { display: none; }
+.web-ad { margin: 14px auto 0; width: 100%; min-height: 100px; text-align: center; }
+.web-ad[hidden] { display: none; }
+body.is-pro .web-ad, body.is-native .web-ad { display: none !important; }

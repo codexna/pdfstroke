@@ -22,6 +22,7 @@ import { pdfToDocx, zip } from './word.js';
 import { docxToPdf } from './docx.js';
 import { imagesToPdf, pdfToImages } from './convert.js';
 import { canDownload, adBeforeDownload, countDownload, startMonetization, showPro } from './pro.js';
+import { initWebAds, showWebAd } from './anuncios-web.js';
 import { invalidateTextBoxes, searchDocument } from './textlayer.js';
 import { ocrAvailable, prepareOcr, recognizePage } from './ocr.js';
 import { buildPdf, replacedChars, flattenedFields } from './exporter.js';
@@ -429,7 +430,9 @@ async function shareNative(blob, name) {
   await native.Plugins.Share.share({ title: name, files: [uri], dialogTitle: 'Compartir' });
 }
 
+/** Descarga en el navegador (cuenta como una de las descargas gratuitas del día y avisa de las que quedan). */
 function download(blob, name) {
+  webDownloaded(name);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -474,6 +477,7 @@ async function saveImpl() {
     }
     return;
   }
+  if (!(await canDownload())) return;
   try {
     let handle = state.fileHandle;
     // El selector debe abrirse antes de generar el PDF, mientras el clic del usuario sigue "activo"
@@ -496,7 +500,7 @@ async function saveImpl() {
         state.fileName = handle.name;
         $('fileName').textContent = handle.name;
         state.dirty = false;
-        toast(t('Guardado ✓'));
+        webDownloaded(handle.name);
         return;
       } catch (err) {
         console.warn('No se pudo escribir en el archivo, se descargará', err);
@@ -514,7 +518,7 @@ async function saveImpl() {
 
 async function shareImpl() {
   try {
-    if (native && !(await canDownload())) return;
+    if (!(await canDownload())) return;
     const blob = await makeBlob();
     if (native) { await deliver(async () => { await shareNative(blob, state.fileName); return null; }); return; }
     const file = new File([blob], state.fileName, { type: 'application/pdf' });
@@ -566,7 +570,7 @@ async function digitalSignImpl() {
     }), true);
   }
   dsigStatus(t('Certificado de {nombre}', { nombre: firma.nombre }));
-  if (native && !(await canDownload())) return;
+  if (!(await canDownload())) return;
   $('dsigModal').hidden = true;
   $('dsigPass').value = '';
   try {
@@ -1283,9 +1287,18 @@ async function reopen(bytes) {
 }
 
 initVoz({ toast, busy });
+initWebAds();
 initLectura({ toast });
 initRecents((file) => openFiles([file]));
 initAcciones({
   makeBlob, deliverFile, reopen, toast, busy, canDownload,
   pickFiles, openFiles: (files) => openFiles(files),
 });
+
+/** Web: tras cada descarga, cuenta las gratuitas del día y muestra el aviso (con un anuncio si los hay). */
+function webDownloaded(name) {
+  if (native) return;
+  const left = countDownload();
+  showSaved({ title: t('Archivo descargado'), where: name }, left);
+  showWebAd('descarga');
+}

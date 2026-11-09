@@ -1,7 +1,8 @@
 import { t } from './i18n.js';
-// Monetización (sólo en la app de Android): anuncio intersticial después de guardar o convertir, límite de descargas
-// diarias en la versión gratuita y suscripción "Pro" (Google Play) que quita los anuncios y el límite.
-// En el navegador (versión web) no hay anuncios ni límite.
+// Monetización. App de Android: anuncio antes de guardar o convertir, límite de descargas diarias en la versión
+// gratuita y suscripción "Pro" o pago de por vida (Google Play) que quita los anuncios y el límite.
+// Versión web (pdfstroke.com): el mismo límite diario; Pro se compra en la web (Lemon Squeezy, que da un código de
+// licencia) y los anuncios son de AdSense (ver anuncios-web.js).
 
 // ---- Configuración: CAMBIAR antes de publicar (ver LEEME-ANDROID.md, "Anuncios y suscripción") ----
 // Identificadores de AdMob (cuenta del autor). El de la app (ca-app-pub-...~...) lo copia
@@ -30,6 +31,14 @@ const PLANES = { // precios de reserva si Google Play no responde
 };
 export const DESCARGAS_GRATIS = 3; // por día
 
+// ---- Pro en la web: tienda de Lemon Squeezy (CAMBIAR al crear la cuenta; ver LEEME-ANDROID.md, «Versión web») ----
+// Enlace de compra (checkout) del producto «PDF Stroke Pro (web)» y número de la tienda (para comprobar que la
+// licencia es de esta tienda). Mientras estén vacíos, en la web solo se ofrece la app de Android.
+const WEB_COMPRA = '';
+const WEB_TIENDA = 0;
+const WEB_LICENCIA = 'editorpdf.licencia';
+const PLAY_URL = 'https://play.google.com/store/apps/details?id=es.pdfstrike.app';
+
 const cap = window.Capacitor?.isNativePlatform?.() ? window.Capacitor : null;
 const AdMob = cap?.Plugins?.AdMob;
 const Billing = cap?.Plugins?.NativePurchases;
@@ -41,14 +50,15 @@ const store = {
 };
 
 let pro = store.get('editorpdf.pro', false);
+let webPro = !!store.get(WEB_LICENCIA, null); // en la web: licencia Pro activada en este navegador
 let proVida = store.get('editorpdf.proVida', false); // Pro comprado de por vida (no hay suscripción que gestionar)
 let adReady = false;
 let adsStarted = null;
 let preparing = null; // carga del anuncio intersticial en curso
 let showingAd = false; // hay un anuncio a pantalla completa abierto
 
-/** ¿Tiene la suscripción Pro? (en la versión web, todo está disponible) */
-export const isPro = () => !cap || pro;
+/** ¿Tiene Pro? (en la app: Google Play; en la web: licencia activada en este navegador) */
+export const isPro = () => (cap ? pro : webPro);
 export const isNativeApp = () => !!cap;
 
 function setPro(v, vida = false) {
@@ -105,7 +115,7 @@ async function buy(plan) {
  * Devuelve true si al cerrarla el usuario es Pro.
  */
 export function showPro(motivo = '') {
-  if (!cap) return Promise.resolve(true);
+  if (!cap) return showProWeb(motivo);
   return new Promise((resolve) => {
     const modal = $('proModal');
     $('proReason').textContent = motivo;
@@ -146,6 +156,79 @@ export function showPro(motivo = '') {
       ['proRestore', attempt(async () => { await Billing.restorePurchases(); await checkPro(); })],
       ['proManage', () => Billing.manageSubscriptions().catch(() => {})],
       ['proPrivacy', () => privacyOptions()],
+      ['proClose', close],
+    ];
+    for (const [id, fn] of handlers) $(id).addEventListener('click', fn);
+  });
+}
+
+// ---------- Pro en la web (licencia de Lemon Squeezy) ----------
+async function licencia(accion, datos) {
+  const body = new URLSearchParams(datos);
+  const r = await fetch('https://api.lemonsqueezy.com/v1/licenses/' + accion, {
+    method: 'POST', headers: { Accept: 'application/json' }, body,
+  });
+  return r.json();
+}
+
+/** Activa en este navegador un código de licencia comprado en la web. */
+async function activarLicencia(codigo) {
+  const r = await licencia('activate', { license_key: codigo, instance_name: 'Navegador ' + new Date().toISOString().slice(0, 10) });
+  if (!r?.activated && !r?.valid) throw new Error(r?.error || t('El código no es válido.'));
+  if (WEB_TIENDA && r.meta?.store_id !== WEB_TIENDA) throw new Error(t('El código no es de PDF Stroke.'));
+  store.set(WEB_LICENCIA, { key: codigo, instance: r.instance?.id || null });
+  webPro = true;
+  document.body.classList.add('is-pro');
+}
+
+/** Al abrir la web: la licencia sigue siendo válida (si no hay conexión, se mantiene). */
+async function comprobarLicenciaWeb() {
+  const l = store.get(WEB_LICENCIA, null);
+  if (!l?.key) return;
+  try {
+    const r = await licencia('validate', { license_key: l.key, ...(l.instance ? { instance_id: l.instance } : {}) });
+    if (r && r.valid === false) { store.set(WEB_LICENCIA, null); webPro = false; document.body.classList.remove('is-pro'); }
+  } catch { /* sin conexión */ }
+}
+
+function showProWeb(motivo) {
+  return new Promise((resolve) => {
+    const modal = $('proModal');
+    modal.classList.add('web');
+    $('proReason').textContent = motivo;
+    $('proReason').hidden = !motivo;
+    $('proStatus').textContent = webPro ? t('Ya tienes PDF Stroke Pro. ¡Gracias!') : '';
+    modal.querySelector('.pro-plans').hidden = true;
+    $('proManage').hidden = true;
+    $('proPrivacy').hidden = true;
+    $('proRestore').hidden = true;
+    $('proWeb').hidden = webPro;
+    $('proWebBuy').hidden = !WEB_COMPRA;
+    $('proWebKey').hidden = !WEB_COMPRA;
+    modal.hidden = false;
+    const close = () => {
+      modal.hidden = true;
+      modal.classList.remove('web');
+      $('proWeb').hidden = true;
+      $('proRestore').hidden = false;
+      for (const [id, fn] of handlers) $(id).removeEventListener('click', fn);
+      resolve(webPro);
+    };
+    const handlers = [
+      ['proWebBuy', () => window.open(WEB_COMPRA, '_blank', 'noopener')],
+      ['proWebApp', () => window.open(PLAY_URL, '_blank', 'noopener')],
+      ['proWebActivate', async () => {
+        const code = $('proWebCode').value.trim();
+        if (!code) return;
+        $('proStatus').textContent = t('Un momento…');
+        try {
+          await activarLicencia(code);
+          $('proStatus').textContent = t('¡Listo! Ya tienes PDF Stroke Pro.');
+          setTimeout(close, 900);
+        } catch (err) {
+          $('proStatus').textContent = (err?.message && !/fetch/i.test(err.message)) ? err.message : t('No se pudo comprobar el código. Revisa la conexión.');
+        }
+      }],
       ['proClose', close],
     ];
     for (const [id, fn] of handlers) $(id).addEventListener('click', fn);
@@ -277,7 +360,7 @@ async function showInterstitial() {
 export function startMonetization() {
   document.body.classList.toggle('is-native', !!cap);
   document.body.classList.toggle('is-pro', isPro());
-  if (!cap) return;
+  if (!cap) { comprobarLicenciaWeb(); return; }
   adsStarted = (async () => {
     try {
       const info = await cap.Plugins.App?.getInfo();
