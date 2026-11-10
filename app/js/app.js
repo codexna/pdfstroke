@@ -23,6 +23,7 @@ import { docxToPdf } from './docx.js';
 import { imagesToPdf, pdfToImages } from './convert.js';
 import { canDownload, adBeforeDownload, countDownload, startMonetization, showPro } from './pro.js';
 import { initWebAds, showWebAd } from './anuncios-web.js';
+import { exito, quizaPedirValoracion } from './valorar.js';
 import { invalidateTextBoxes, searchDocument } from './textlayer.js';
 import { ocrAvailable, prepareOcr, recognizePage } from './ocr.js';
 import { buildPdf, replacedChars, flattenedFields } from './exporter.js';
@@ -58,13 +59,14 @@ async function deliver(saveFn) {
 }
 
 function showSaved({ title, where }, left) {
+  exito();
   $('savedTitle').textContent = title;
   $('savedWhere').textContent = where;
   $('savedLeft').textContent = left;
   $('savedLeft').hidden = !left;
   $('savedModal').hidden = false;
 }
-$('savedOk').addEventListener('click', () => { $('savedModal').hidden = true; });
+$('savedOk').addEventListener('click', () => { $('savedModal').hidden = true; quizaPedirValoracion(); });
 $('savedModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) $('savedModal').hidden = true; });
 const inDocs = (name) => t('Documentos › PDF Stroke › {nombre}', { nombre: name });
 
