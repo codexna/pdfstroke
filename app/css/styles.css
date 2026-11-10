@@ -515,6 +515,9 @@ body.reading.tts-on .read-bottom { display: none; }
 .pro-web .btn.big { flex-direction: column; align-items: center; gap: 2px; }
 .pro-web small { font-weight: 400; opacity: .85; }
 .pro-web-key { display: flex; gap: 8px; }
+.pro-web-buy { display: flex; flex-direction: column; gap: 8px; }
+.pro-web-buy[hidden] { display: none; }
+.pro-web-note { margin: 0; text-align: center; font-size: .85em; opacity: .75; }
 .pro-web-key[hidden] { display: none; }
 .pro-web-key input { flex: 1; min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: inherit; font-size: 16px; color: inherit; }
 #proModal.web .modal-card > p.muted.small:last-child { display: none; }

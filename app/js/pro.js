@@ -32,10 +32,17 @@ const PLANES = { // precios de reserva si Google Play no responde
 export const DESCARGAS_GRATIS = 3; // por día
 
 // ---- Pro en la web: tienda de Lemon Squeezy (CAMBIAR al crear la cuenta; ver LEEME-ANDROID.md, «Versión web») ----
-// Enlace de compra (checkout) del producto «PDF Stroke Pro (web)» y número de la tienda (para comprobar que la
-// licencia es de esta tienda). Mientras estén vacíos, en la web solo se ofrece la app de Android.
-const WEB_COMPRA = '';
-const WEB_TIENDA = 0;
+// Enlaces de compra (checkout) de cada plan del producto «PDF Stroke Pro (web)» y número de la tienda (para comprobar
+// que la licencia es de esta tienda). Un plan con el enlace vacío no se muestra; sin ninguno, en la web solo se
+// ofrece la app de Android. Los precios de la web (con IVA) son distintos de los de Google Play.
+const WEB_COMPRA = {
+  mensual: 'https://pdfstroke.lemonsqueezy.com/checkout/buy/a0844078-9135-4f03-9995-b0e8e0cfdc93',
+  anual: 'https://pdfstroke.lemonsqueezy.com/checkout/buy/2dc5a3ee-8b42-4dc5-96af-dc0ebefe07b2',
+  vida: 'https://pdfstroke.lemonsqueezy.com/checkout/buy/8dd27663-a8db-44c8-819f-4c273fa5ad33',
+};
+const WEB_PRECIOS = { mensual: '1,99 €', anual: '6,99 €', vida: '12,99 €' };
+const WEB_TIENDA = 520600;
+const hayCompraWeb = () => Object.values(WEB_COMPRA).some(Boolean);
 const WEB_LICENCIA = 'editorpdf.licencia';
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=es.pdfstrike.app';
 
@@ -206,8 +213,17 @@ function showProWeb(motivo) {
     $('proPrivacy').hidden = true;
     $('proRestore').hidden = true;
     $('proWeb').hidden = webPro;
-    $('proWebBuy').hidden = !WEB_COMPRA;
-    $('proWebKey').hidden = !WEB_COMPRA;
+    $('proWebBuy').hidden = !hayCompraWeb();
+    $('proWebKey').hidden = !hayCompraWeb();
+    const textos = {
+      mensual: t('{precio} al mes', { precio: WEB_PRECIOS.mensual }),
+      anual: t('{precio} al año', { precio: WEB_PRECIOS.anual }),
+      vida: t('{precio} pago único', { precio: WEB_PRECIOS.vida }),
+    };
+    for (const b of $('proWebBuy').querySelectorAll('[data-plan]')) {
+      b.hidden = !WEB_COMPRA[b.dataset.plan];
+      b.querySelector('small').textContent = textos[b.dataset.plan];
+    }
     modal.hidden = false;
     const close = () => {
       modal.hidden = true;
@@ -218,7 +234,7 @@ function showProWeb(motivo) {
       resolve(webPro);
     };
     const handlers = [
-      ['proWebBuy', () => window.open(WEB_COMPRA, '_blank', 'noopener')],
+      ['proWebBuy', (e) => { const b = e.target.closest('[data-plan]'); if (b && WEB_COMPRA[b.dataset.plan]) window.open(WEB_COMPRA[b.dataset.plan], '_blank', 'noopener'); }],
       ['proWebApp', () => window.open(PLAY_URL, '_blank', 'noopener')],
       ['proWebActivate', async () => {
         const code = $('proWebCode').value.trim();
