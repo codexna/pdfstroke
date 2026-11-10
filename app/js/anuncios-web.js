@@ -24,7 +24,10 @@ function cargar() {
   return cargado;
 }
 
-const activo = () => !cap && !document.body.classList.contains('is-pro') && /pdfstroke\.com$/.test(location.hostname);
+// DESACTIVADO: AdSense no permite anuncios en pantallas sin contenido del editor (el editor, avisos de descarga…).
+// Los anuncios de la web van solo en la portada y en las guías (/ayuda/), con «Anuncios automáticos» de AdSense.
+const PERMITIDO = false;
+const activo = () => PERMITIDO && !cap && !document.body.classList.contains('is-pro') && /pdfstroke\.com$/.test(location.hostname);
 
 function poner(id, bloque) {
   const box = document.getElementById(id);

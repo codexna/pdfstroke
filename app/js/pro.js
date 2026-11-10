@@ -74,6 +74,9 @@ function setPro(v, vida = false) {
 export async function checkPro() {
   if (!Billing) return isPro();
   try {
+    // Reconoce (acknowledge) las compras hechas fuera de la app, p. ej. un código de promoción canjeado
+    // en Play Store: si no se reconocen en 3 días, Google las anula. getPurchases no lo hace; restorePurchases sí.
+    try { await Billing.restorePurchases(); } catch (err) { console.warn('No se pudieron reconocer compras pendientes', err); }
     const valida = (t) => t.purchaseState === '1' || t.isActive;
     const [subs, inapp] = await Promise.all([
       Billing.getPurchases({ productType: 'subs', onlyCurrentEntitlements: true }),
