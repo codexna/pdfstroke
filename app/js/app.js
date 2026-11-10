@@ -719,6 +719,7 @@ convertMenu.addEventListener('click', (e) => {
   else if (c === 'jpg' || c === 'png') convertToImages(c);
   else if (c === 'merge') $('fileInsert').click();
   else if (c === 'reading') enterReading();
+  else if (c === 'dsign') openDigitalSign();
   else if (c === 'aloud') startReading();
   else if (c === 'compress') accionComprimir();
   else if (c === 'protect') accionProteger();
@@ -754,11 +755,13 @@ document.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('cli
     if (files.length && await openFiles(files)) toggleSidebar(true);
   } else if (act === 'scan') {
     accionEscanear();
-  } else if (act === 'read' || act === 'compress' || act === 'protect') {
+  } else if (['read', 'compress', 'protect', 'dsign', 'extract'].includes(act)) {
     const files = await pickFiles(ACCEPT.pdf, false);
     if (files.length && await openFiles(files)) {
       if (act === 'read') enterReading();
       else if (act === 'compress') accionComprimir();
+      else if (act === 'dsign') openDigitalSign();
+      else if (act === 'extract') accionExtraer();
       else accionProteger();
     }
   }

@@ -192,6 +192,8 @@
           <button data-start="read"><svg><use href="#i-book"/></svg><span>Leer PDF</span></button>
           <button data-start="compress"><svg><use href="#i-compress"/></svg><span>Comprimir PDF</span></button>
           <button data-start="protect"><svg><use href="#i-lock"/></svg><span>Proteger con contraseña</span></button>
+          <button data-start="dsign"><svg><use href="#i-sign"/></svg><span>Firma digital</span></button>
+          <button data-start="extract"><svg><use href="#i-scissors"/></svg><span>Extraer páginas</span></button>
         </div>
         <div class="web-ad" id="adInicio" hidden></div>
         <div class="recents" id="recents" hidden>
@@ -221,9 +223,9 @@
       <div class="spacer"></div>
       <button class="icon-btn sm" id="signClose" title="Cerrar"><svg><use href="#i-close"/></svg></button>
     </div>
+    <button class="btn dsig-link" id="signDigital"><svg><use href="#i-lock"/></svg><span>Firma digital con certificado (.p12 / .pfx)</span></button>
     <div class="saved-signs" id="savedSigns"></div>
     <p class="muted small">Dibuja tu firma con el dedo, el lápiz o el ratón.</p>
-    <button class="btn ghost dsig-link" id="signDigital"><svg><use href="#i-sign"/></svg><span>Firma digital con certificado (.p12 / .pfx)</span></button>
     <canvas id="signPad"></canvas>
     <div class="modal-foot">
       <div class="swatches" id="signColors">
@@ -325,6 +327,7 @@
   <button data-conv="merge"><svg><use href="#i-merge"/></svg><span>Unir con otros PDF, imágenes o Word</span></button>
   <div class="menu-sec">Herramientas</div>
   <button data-conv="compress"><svg><use href="#i-compress"/></svg><span>Comprimir PDF</span></button>
+  <button data-conv="dsign"><svg><use href="#i-sign"/></svg><span>Firma digital con certificado</span></button>
   <button data-conv="protect"><svg><use href="#i-lock"/></svg><span>Proteger con contraseña</span></button>
   <button data-conv="unprotect"><svg><use href="#i-unlock"/></svg><span>Quitar contraseña</span></button>
   <button data-conv="extract"><svg><use href="#i-scissors"/></svg><span>Extraer o dividir páginas</span></button>

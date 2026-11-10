@@ -20,11 +20,86 @@ export function shownSize(p) {
 const io = new IntersectionObserver((entries) => {
   for (const e of entries) {
     const uid = e.target.dataset.uid;
-    if (e.isIntersecting) visible.add(uid);
+    if (e.isIntersecting) { visible.add(uid); showPreview(uid); }
     else { visible.delete(uid); releaseCanvas(uid); }
   }
   scheduleRender(30);
 }, { root: viewerEl, rootMargin: '900px 0px' });
+
+// ---------- Vistas previas ligeras ----------
+// Cada página tiene además una imagen pequeña que se prepara por adelantado (varias pantallas antes de llegar a ella)
+// y se guarda: al desplazarse, la página se ve al momento con ella mientras se dibuja la versión nítida.
+const PREVIEW_W = 360; // píxeles de ancho
+const PREVIEW_MAX = 60; // páginas guardadas
+const previews = new Map(); // "origen:página" -> ImageBitmap | canvas (orden = uso reciente)
+const near = new Set(); // páginas cerca de la vista (para preparar su vista previa)
+const previewKey = (p) => p.src + ':' + p.index;
+let previewBusy = false;
+
+const nearIo = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (e.isIntersecting) near.add(e.target.dataset.uid); else near.delete(e.target.dataset.uid);
+  }
+  schedulePreviews();
+}, { root: viewerEl, rootMargin: '300% 0px' });
+
+let previewTimer = 0;
+function schedulePreviews(delay = 60) {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(makePreviews, delay);
+}
+
+/** Pone la vista previa en una página que todavía no está dibujada (al instante, sin esperar). */
+function showPreview(uid) {
+  const els = pageEls.get(uid);
+  const p = findPage(uid);
+  if (!els || !p || p.src == null || els.renderedScale) return;
+  const k = previewKey(p);
+  const img = previews.get(k);
+  if (!img) return;
+  previews.delete(k);
+  previews.set(k, img); // usada ahora: la más reciente
+  if (els.canvas.width !== img.width || els.canvas.height !== img.height) {
+    els.canvas.width = img.width;
+    els.canvas.height = img.height;
+  }
+  els.canvas.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
+}
+
+async function makePreviews() {
+  if (previewBusy) return;
+  previewBusy = true;
+  try {
+    // Primero las más cercanas a lo que se ve
+    const order = [...near].sort((a, b) => distanceToCenter(a) - distanceToCenter(b));
+    for (const uid of order) {
+      const p = findPage(uid);
+      if (!p || p.src == null || previews.has(previewKey(p))) continue;
+      // Lo que se ve tiene prioridad: si hay páginas visibles sin dibujar, se espera
+      if ([...visible].some((v) => { const e = pageEls.get(v); return e && !e.renderedScale; })) { schedulePreviews(250); return; }
+      try {
+        const page = await state.sources.get(p.src).pdf.getPage(p.index + 1);
+        const c = document.createElement('canvas');
+        c.width = PREVIEW_W;
+        c.height = Math.max(1, Math.round((PREVIEW_W * p.h) / p.w));
+        const viewport = page.getViewport({ scale: c.width / p.w });
+        await page.render({ canvasContext: c.getContext('2d'), viewport }).promise;
+        const img = window.createImageBitmap ? await createImageBitmap(c) : c;
+        previews.set(previewKey(p), img);
+        while (previews.size > PREVIEW_MAX) {
+          const [old, oimg] = previews.entries().next().value;
+          previews.delete(old);
+          oimg.close?.();
+        }
+        showPreview(uid);
+      } catch (err) {
+        if (err?.name !== 'RenderingCancelledException') console.warn('Vista previa no disponible', err);
+      }
+    }
+  } finally {
+    previewBusy = false;
+  }
+}
 
 function createPageEls(p) {
   const wrap = document.createElement('div');
@@ -54,6 +129,7 @@ function createPageEls(p) {
     patches: [], patchSet: null, failed: new Set(), // zonas que muestran la página modificada (ver preparePatches)
   };
   io.observe(wrap);
+  nearIo.observe(wrap);
   return els;
 }
 
@@ -63,6 +139,7 @@ export function buildPages() {
   for (const [uid, els] of pageEls) {
     if (!keep.has(uid)) {
       io.unobserve(els.wrap);
+      nearIo.unobserve(els.wrap);
       els.task?.cancel();
       els.wrap.remove();
       pageEls.delete(uid);
@@ -121,6 +198,7 @@ export function scheduleRender(delay = 150) {
 async function renderVisible() {
   // Primero la página actual, luego el resto de visibles
   const order = [...visible].sort((a, b) => distanceToCenter(a) - distanceToCenter(b));
+  for (const uid of order) showPreview(uid); // mientras, la vista previa (si ya está hecha)
   for (const uid of order) {
     const p = findPage(uid);
     if (!p) continue;
@@ -204,6 +282,7 @@ async function renderPage(p) {
     dst.height = c.height;
     dst.getContext('2d', { willReadFrequently: true }).drawImage(c, 0, 0);
     els.renderedScale = scale;
+    if (p.src != null && !previews.has(previewKey(p))) schedulePreviews(200);
     els.patches = patches;
     els.patchSet = patchSet;
     els.failed = failed;
@@ -225,6 +304,7 @@ function releaseCanvas(uid) {
   els.patches = [];
   els.patchSet = null;
   els.failed = new Set();
+  showPreview(uid); // queda la vista previa ligera (si la hay), que ocupa muy poco
 }
 
 // ---------- Zonas modificadas ----------
