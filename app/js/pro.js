@@ -77,22 +77,59 @@ function setPro(v, vida = false) {
 }
 
 // ---------- Suscripción ----------
-/** Comprueba con Google Play si hay una suscripción Pro activa (al arrancar y tras comprar o restaurar). */
-export async function checkPro() {
+// El plugin de Google Play usa una única conexión y cada llamada cierra la anterior: si se hacen dos a la vez, una
+// corta a la otra (falla o no responde nunca) y la app no se enteraba de que el usuario había comprado Pro. Por eso
+// todas las llamadas van en cola, de una en una. Quien llama recibe un error si tarda demasiado (`espera`), pero la
+// siguiente llamada espera a que esta termine de verdad (como mucho `tope`): si se adelantara, la respuesta tardía de
+// esta cerraría la conexión de la siguiente. La compra espera a que el usuario termine en la ventana de Google Play.
+const COLA_TOPE = 60000;
+const COMPRA_MAX = 15 * 60000;
+const COMPROBAR_AL_VOLVER = 5 * 60000; // al volver a la app, se vuelve a comprobar Pro si hace más de esto
+
+function conLimite(p, ms, msg) {
+  if (!ms) return p;
+  let reloj;
+  const limite = new Promise((_, rechazar) => { reloj = setTimeout(() => rechazar(new Error(msg)), ms); });
+  return Promise.race([p, limite]).finally(() => clearTimeout(reloj));
+}
+
+let colaBilling = Promise.resolve();
+function billing(metodo, opciones, espera = 30000, tope = COLA_TOPE) {
+  const turno = colaBilling.then(() => {
+    const nativa = Promise.resolve().then(() => Billing[metodo](opciones));
+    return { nativa, libre: conLimite(nativa, tope, 'tope').catch(() => {}) };
+  });
+  colaBilling = turno.then((x) => x.libre);
+  return turno.then((x) => conLimite(x.nativa, espera, `Google Play no responde (${metodo})`));
+}
+
+let ultimaComprobacion = 0;
+/**
+ * Comprueba con Google Play si hay una suscripción Pro activa o un pago de por vida (al arrancar, al volver a la app y
+ * tras comprar o restaurar). `confirmada`: producto cuyo pago acaba de terminar bien (cuenta aunque la consulta aún no
+ * lo traiga). `lanzar`: si la consulta falla, lanza el error (si no, se mantiene lo último que se supo).
+ */
+export async function checkPro({ confirmada = null, lanzar = false } = {}) {
   if (!Billing) return isPro();
+  ultimaComprobacion = Date.now();
   try {
-    // Reconoce (acknowledge) las compras hechas fuera de la app, p. ej. un código de promoción canjeado
-    // en Play Store: si no se reconocen en 3 días, Google las anula. getPurchases no lo hace; restorePurchases sí.
-    try { await Billing.restorePurchases(); } catch (err) { console.warn('No se pudieron reconocer compras pendientes', err); }
-    const valida = (t) => t.purchaseState === '1' || t.isActive;
-    const [subs, inapp] = await Promise.all([
-      Billing.getPurchases({ productType: 'subs', onlyCurrentEntitlements: true }),
-      Billing.getPurchases({ productType: 'inapp', onlyCurrentEntitlements: true }),
-    ]);
-    const vida = inapp.purchases.some((t) => t.productIdentifier === VIDA && valida(t));
-    setPro(vida || subs.purchases.some((t) => t.productIdentifier === PRODUCTO && valida(t)), vida);
+    // Suscripciones y pago único en una sola consulta (una sola conexión)
+    const res = await billing('getPurchases', {});
+    if (!Array.isArray(res?.purchases)) throw new Error('Google Play no ha devuelto las compras');
+    const validas = res.purchases.filter((tr) => tr.purchaseState === '1' || tr.isActive);
+    // Reconoce (acknowledge) las compras que aún no lo están: las hechas fuera de la app (p. ej. un código de promoción
+    // canjeado en Play Store) y las de la app cuyo reconocimiento automático no llegó a completarse (el plugin cierra la
+    // conexión sin esperarlo). Si no se reconocen en 3 días, Google las anula y devuelve el dinero.
+    for (const tr of validas) {
+      if (tr.isAcknowledged === false && tr.purchaseToken) {
+        try { await billing('acknowledgePurchase', { purchaseToken: tr.purchaseToken }); } catch (err) { console.warn('No se pudo reconocer la compra', err); }
+      }
+    }
+    const vida = confirmada === VIDA || validas.some((tr) => tr.productIdentifier === VIDA);
+    setPro(vida || !!confirmada || validas.some((tr) => tr.productIdentifier === PRODUCTO), vida);
   } catch (err) {
     console.warn('No se pudo comprobar la suscripción', err); // sin conexión: se mantiene lo último que se supo
+    if (lanzar) throw err;
   }
   return pro;
 }
@@ -100,25 +137,41 @@ export async function checkPro() {
 async function prices() {
   const out = { ...PLANES };
   try {
-    const { products } = await Billing.getProducts({ productIdentifiers: [PRODUCTO], productType: 'subs' });
+    const { products } = await billing('getProducts', { productIdentifiers: [PRODUCTO], productType: 'subs' });
     for (const p of products) {
-      if (p.planIdentifier === 'mensual') out.mensual = t('{precio} al mes', { precio: p.priceString });
-      if (p.planIdentifier === 'anual') out.anual = t('{precio} al año', { precio: p.priceString });
+      if (p.offerId) continue; // ofertas especiales (p. ej. una prueba gratis): se muestra el precio normal del plan
+      const plan = p.identifier || p.planIdentifier; // el plan base («mensual» o «anual») viene en `identifier`
+      if (plan === 'mensual') out.mensual = t('{precio} al mes', { precio: p.priceString });
+      if (plan === 'anual') out.anual = t('{precio} al año', { precio: p.priceString });
     }
   } catch (err) { console.warn('Precios no disponibles', err); }
   try {
-    const { products } = await Billing.getProducts({ productIdentifiers: [VIDA], productType: 'inapp' });
+    const { products } = await billing('getProducts', { productIdentifiers: [VIDA], productType: 'inapp' });
     if (products[0]?.priceString) out.vida = t('{precio} pago único', { precio: products[0].priceString });
   } catch (err) { console.warn('Precio de por vida no disponible', err); }
   return out;
 }
 
 async function buy(plan) {
-  await Billing.purchaseProduct(plan === 'vida'
-    ? { productIdentifier: VIDA, productType: 'inapp', autoAcknowledgePurchases: true }
-    : { productIdentifier: PRODUCTO, planIdentifier: plan, productType: 'subs', autoAcknowledgePurchases: true });
-  await checkPro();
+  const producto = plan === 'vida' ? VIDA : PRODUCTO;
+  let compra;
+  try {
+    compra = await billing('purchaseProduct', plan === 'vida'
+      ? { productIdentifier: VIDA, productType: 'inapp', autoAcknowledgePurchases: true }
+      : { productIdentifier: PRODUCTO, planIdentifier: plan, productType: 'subs', autoAcknowledgePurchases: true },
+    COMPRA_MAX, COMPRA_MAX);
+  } catch (err) {
+    // «Ya tienes este artículo»: ya estaba comprado (p. ej. la app no llegó a enterarse); se comprueba otra vez
+    if (err?.code === 'ITEM_ALREADY_OWNED') { await checkPro({ lanzar: true }); return; }
+    throw err;
+  }
+  // El pago ha terminado bien: cuenta ya, aunque la consulta de después (que además reconoce la compra) no lo traiga
+  const ok = compra?.purchaseState === '1' && compra.productIdentifier === producto;
+  if (ok) setPro(true, producto === VIDA);
+  await checkPro({ confirmada: ok ? producto : null });
 }
+
+let ocupado = false; // compra o comprobación en curso en la ventana Pro (un segundo toque no abre otra)
 
 /**
  * Ventana de la suscripción Pro. `motivo` es el texto de arriba (p. ej. que se ha llegado al límite).
@@ -130,9 +183,13 @@ export function showPro(motivo = '') {
     const modal = $('proModal');
     $('proReason').textContent = motivo;
     $('proReason').hidden = !motivo;
-    $('proStatus').textContent = pro ? t('Ya tienes PDF Stroke Pro. ¡Gracias!') : '';
+    // Qué tipo de Pro tiene: el pago de por vida no es una suscripción (no aparece en Google Play para cancelarla)
+    $('proStatus').textContent = !pro ? '' : proVida
+      ? t('Tienes PDF Stroke Pro de por vida. ¡Gracias! No hay ninguna suscripción que cancelar.')
+      : t('Tienes la suscripción PDF Stroke Pro. ¡Gracias! Puedes cancelarla en «Gestionar suscripción».');
     modal.querySelector('.pro-plans').hidden = pro;
-    $('proManage').hidden = !pro || proVida;
+    $('proManage').hidden = false; // siempre: abre las suscripciones de Google Play para verlas o cancelarlas
+    $('proRestoreHint').hidden = false;
     $('proPrivacy').hidden = pro || !AdMob;
     modal.hidden = false;
     prices().then((p) => { $('proMonthly').textContent = p.mensual; $('proYearly').textContent = p.anual; $('proLifetime').textContent = p.vida; });
@@ -143,27 +200,34 @@ export function showPro(motivo = '') {
     };
     const busy = (txt) => { $('proStatus').textContent = txt; };
     const attempt = (fn) => async () => {
+      if (ocupado) return;
+      ocupado = true;
       try {
         busy(t('Un momento…'));
         await fn();
         busy(pro ? t('¡Listo! Ya tienes PDF Stroke Pro.') : t('No se ha encontrado ninguna suscripción activa.'));
         if (pro) setTimeout(close, 900);
       } catch (err) {
-        const msg = String(err?.message || err);
+        // El plugin pone el motivo en `code` (USER_CANCELED, ITEM_ALREADY_OWNED…) y una frase genérica en `message`
+        const msg = `${err?.message || err} ${err?.code || ''}`;
         console.warn('Suscripción', msg);
         busy(/cancel/i.test(msg) ? ''
-          : /BILLING_SETUP|UNAVAILABLE|SERVICE|network/i.test(msg)
-            ? t('Google Play no está disponible ahora. Comprueba la conexión y que tienes una cuenta de Google en el móvil.')
-            : /not found|ITEM_UNAVAILABLE|no product/i.test(msg)
-              ? t('La suscripción aún no está disponible. Inténtalo más tarde.')
-              : t('No se ha podido completar la compra. Inténtalo de nuevo.'));
+          : /pending/i.test(msg)
+            ? t('Pago pendiente: PDF Stroke Pro se activará cuando Google Play lo confirme.')
+            : /BILLING_SETUP|UNAVAILABLE|SERVICE|network|no responde|QUERY_PURCHASES|devuelto/i.test(msg)
+              ? t('Google Play no está disponible ahora. Comprueba la conexión y que tienes una cuenta de Google en el móvil.')
+              : /not found|ITEM_UNAVAILABLE|no product/i.test(msg)
+                ? t('La suscripción aún no está disponible. Inténtalo más tarde.')
+                : t('No se ha podido completar la compra. Inténtalo de nuevo.'));
+      } finally {
+        ocupado = false;
       }
     };
     const handlers = [
       ['proBuyMonthly', attempt(() => buy('mensual'))],
       ['proBuyYearly', attempt(() => buy('anual'))],
       ['proBuyLifetime', attempt(() => buy('vida'))],
-      ['proRestore', attempt(async () => { await Billing.restorePurchases(); await checkPro(); })],
+      ['proRestore', attempt(() => checkPro({ lanzar: true }))], // (checkPro ya reconoce las compras pendientes)
       ['proManage', () => Billing.manageSubscriptions().catch(() => {})],
       ['proPrivacy', () => privacyOptions()],
       ['proClose', close],
@@ -212,6 +276,7 @@ function showProWeb(motivo) {
     $('proManage').hidden = true;
     $('proPrivacy').hidden = true;
     $('proRestore').hidden = true;
+    $('proRestoreHint').hidden = true;
     $('proWeb').hidden = webPro;
     $('proWebBuy').hidden = !hayCompraWeb();
     $('proWebKey').hidden = !hayCompraWeb();
@@ -400,6 +465,8 @@ export function startMonetization() {
   // Al volver a la app después de un buen rato fuera, otro anuncio de apertura
   let leftAt = 0;
   cap.Plugins.App?.addListener('appStateChange', ({ isActive }) => {
+    // Al volver, Pro se comprueba otra vez (p. ej. un pago pendiente que Google Play ya ha confirmado)
+    if (isActive && Date.now() - ultimaComprobacion >= COMPROBAR_AL_VOLVER) checkPro();
     if (showingAd) return; // los anuncios tapan la app: eso no cuenta como salir
     if (!isActive) { leftAt = Date.now(); return; }
     if (leftAt && Date.now() - leftAt >= APERTURA_AL_VOLVER) { leftAt = 0; adsStarted.then(showAppOpen); }
