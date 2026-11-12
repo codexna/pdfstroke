@@ -7,6 +7,7 @@ import { getEls, toLocal, currentPageUid, viewerEl, refreshPatches } from './vie
 import { getLines, linesSync, sampleColors, invalidateTextBoxes } from './textlayer.js';
 import { toPdfText } from './pdftext.js';
 import { colorAt, hitObject } from './paint.js';
+import { moveGuides } from './guias.js';
 
 export { isNoopEdit };
 
@@ -269,7 +270,7 @@ function styleTextEl(el, o, pageW) {
     maxWidth: !o.w && Number.isFinite(avail) ? avail / hs + 'px' : '',
     // El alto extra de una caja estirada sólo se dibuja en la selección: el elemento mide lo que su texto y no
     // tapa los toques sobre lo que haya debajo
-    transform: hs !== 1 ? `scaleX(${hs})` : '',
+    transform: [rotOf(o) ? `rotate(${rotOf(o)}deg)` : '', hs !== 1 ? `scaleX(${hs})` : ''].join(' ').trim(),
   });
 }
 
@@ -444,6 +445,40 @@ export const zoneParts = (z) => z.rects || [{ x: z.x, y: z.y, w: z.w, h: z.h }];
 // ---------- Geometría ----------
 function objNode(p, id) { return getEls(p.uid)?.objLayer.querySelector(`.obj[data-id="${id}"]`); }
 
+/**
+ * Giro propio de un texto o una imagen, en grados en sentido horario: los que se añaden en una página que se ve
+ * girada llevan el giro contrario, para que salgan derechos en pantalla y en el PDF.
+ */
+export const rotOf = (o) => (((o.rot || 0) % 360) + 360) % 360;
+
+/** Punto de la página que corresponde a un punto (lx, ly) del objeto, medido desde su esquina (o.x, o.y). */
+export function objPoint(o, lx, ly) {
+  switch (rotOf(o)) {
+    case 90: return [o.x - ly, o.y + lx];
+    case 180: return [o.x - lx, o.y - ly];
+    case 270: return [o.x + ly, o.y - lx];
+    default: return [o.x + lx, o.y + ly];
+  }
+}
+
+/** Lo contrario: punto del objeto (desde su esquina) que corresponde a un punto de la página. */
+export function objLocal(o, x, y) {
+  const dx = x - o.x, dy = y - o.y;
+  switch (rotOf(o)) {
+    case 90: return [dy, -dx];
+    case 180: return [-dx, -dy];
+    case 270: return [-dy, dx];
+    default: return [dx, dy];
+  }
+}
+
+/** Rectángulo de la página que ocupa un objeto girado de w × h. */
+function rotBox(o, w, h) {
+  const pts = [[0, 0], [w, 0], [0, h], [w, h]].map(([a, b]) => objPoint(o, a, b));
+  const x = Math.min(...pts.map((q) => q[0])), y = Math.min(...pts.map((q) => q[1]));
+  return { x, y, w: Math.max(...pts.map((q) => q[0])) - x, h: Math.max(...pts.map((q) => q[1])) - y };
+}
+
 export function getBBox(o, p) {
   switch (o.type) {
     case 'text': {
@@ -452,13 +487,15 @@ export function getBBox(o, p) {
       if (el && el.offsetWidth) {
         // Medida con decimales (offsetWidth redondea); el rectángulo ya incluye la escala horizontal y el zoom
         const r = el.getBoundingClientRect();
-        const turned = p.rotation % 180 !== 0;
-        const h = (turned ? r.width : r.height) / state.zoom;
-        return { x: o.x, y: o.y, w: (turned ? r.height : r.width) / state.zoom, h: Math.max(o.h || 0, h) };
+        const turned = (p.rotation + rotOf(o)) % 180 !== 0;
+        const w = (turned ? r.height : r.width) / state.zoom;
+        const h = Math.max(o.h || 0, (turned ? r.width : r.height) / state.zoom);
+        return rotOf(o) ? rotBox(o, w, h) : { x: o.x, y: o.y, w, h };
       }
       const lines = (o.text || ' ').split('\n');
       const w = o.w ?? Math.max(...lines.map((l) => l.length)) * o.size * 0.5 * hs + 4;
-      return { x: o.x, y: o.y, w, h: Math.max(o.h || 0, lines.length * o.size * LH) };
+      const h = Math.max(o.h || 0, lines.length * o.size * LH);
+      return rotOf(o) ? rotBox(o, w, h) : { x: o.x, y: o.y, w, h };
     }
     case 'ink': {
       const xs = o.points.map((q) => q[0]), ys = o.points.map((q) => q[1]);
@@ -468,7 +505,7 @@ export function getBBox(o, p) {
     case 'line': case 'arrow':
       return { x: Math.min(o.x1, o.x2), y: Math.min(o.y1, o.y2), w: Math.abs(o.x2 - o.x1), h: Math.abs(o.y2 - o.y1) };
     default:
-      return { x: o.x, y: o.y, w: o.w, h: o.h };
+      return rotOf(o) ? rotBox(o, o.w, o.h) : { x: o.x, y: o.y, w: o.w, h: o.h };
   }
 }
 
@@ -496,7 +533,16 @@ function applyBox(o, orig, ob, nb, handle) {
       if (/[ns]/.test(handle)) o.h = nb.h;
       break;
     default:
-      Object.assign(o, nb);
+      if (rotOf(o)) {
+        // Imagen girada: el rectángulo nuevo es el que ocupa en la página; su esquina y sus lados van según el giro
+        const r = rotOf(o);
+        o.w = r === 180 ? nb.w : nb.h;
+        o.h = r === 180 ? nb.h : nb.w;
+        o.x = r === 270 ? nb.x : nb.x + nb.w;
+        o.y = r === 90 ? nb.y : nb.y + nb.h;
+      } else {
+        Object.assign(o, nb);
+      }
   }
 }
 
@@ -506,6 +552,7 @@ const keepsRatio = (o) => o.type === 'image';
 function handleKinds(o) {
   if (o.type === 'note') return [];
   if (o.type === 'line' || o.type === 'arrow') return ['p1', 'p2'];
+  if (o.type === 'text' && rotOf(o)) return []; // un texto girado se mueve, pero su caja no se estira
   const corners = ['nw', 'ne', 'sw', 'se'];
   if (o.type === 'image' || o.type === 'ink') return corners;
   return [...corners, 'n', 's', 'e', 'w'];
@@ -555,7 +602,10 @@ function buildObjEl(o, p) {
     return el;
   }
   if (o.type === 'image') {
-    Object.assign(el.style, { left: o.x + 'px', top: o.y + 'px', width: o.w + 'px', height: o.h + 'px', opacity: o.opacity ?? 1 });
+    Object.assign(el.style, {
+      left: o.x + 'px', top: o.y + 'px', width: o.w + 'px', height: o.h + 'px', opacity: o.opacity ?? 1,
+      transformOrigin: '0 0', transform: rotOf(o) ? `rotate(${rotOf(o)}deg)` : '',
+    });
     el.hidden = !!o.removed; // imagen del PDF original eliminada: no se ve, pero sigue quitando la original
     const img = document.createElement('img');
     img.src = state.assets[o.asset]?.src || '';
@@ -603,6 +653,13 @@ function syncCover(p, o, refresh = true) {
 
 // Las tapas cuya zona ya se ve como en la página modificada sobran; si la zona ha crecido, sólo hace falta tapar
 // la parte nueva (ver refreshPatches)
+// El asa y el botón de borrar miden lo mismo en la pantalla con cualquier zoom: al cambiarlo, se recolocan
+let zoomFrame = 0;
+on('zoom', () => {
+  if (!state.selection || zoomFrame) return;
+  zoomFrame = requestAnimationFrame(() => { zoomFrame = 0; if (!drag) renderSelection(); });
+});
+
 on('patches', ({ p, status }) => {
   const layer = getEls(p.uid)?.objLayer;
   if (!layer) return;
@@ -694,34 +751,100 @@ export function renderSelection() {
       addHandle(d, h);
     }
   }
-  // Pegados a la esquina superior izquierda de la página, el asa y el botón de borrar se saldrían de la vista:
-  // entonces van debajo de la caja
-  const below = b.x * state.zoom < 40 || b.y * state.zoom < 40;
+  // Asa de mover (al escribir) y botón de borrar. Van por debajo de los tiradores de la caja (donde se tocan,
+  // manda el tirador). Con "Seleccionar", pegados a la esquina superior izquierda de la página se saldrían de la
+  // vista: entonces van debajo de la caja.
+  const below = !textMode && (b.x * state.zoom < 40 || b.y * state.zoom < 40);
   const anchor = { left: b.x + 'px', top: (below ? b.y + b.h : b.y) + 'px' };
+  const spot = textMode ? buttonSpot(p, o, b, els, drag && spotLock?.id === o.id ? spotLock.i : undefined) : null;
+  spotLock = spot ? { id: o.id, i: spot.i } : null;
+  let after = box;
+  const put = (el) => { after.after(el); after = el; };
   if (textMode) {
     // Asa para mover la caja mientras se edita
     const g = document.createElement('div');
-    g.className = 'grip' + (below ? ' below' : '');
+    g.className = 'grip';
     g.title = t('Mover');
     g.innerHTML = '<svg><use href="#i-move"/></svg>';
-    Object.assign(g.style, anchor);
+    Object.assign(g.style, { left: spot.grip[0] + 'px', top: spot.grip[1] + 'px' });
     addHandle(g, 'move');
+    put(g);
   }
   if (state.tool === 'select' || textMode) {
     // Botón para borrar el bloque: al lado del asa de mover (o en su sitio, si no la hay)
     const d = document.createElement('div');
-    d.className = 'sel-del' + (below ? ' below' : '') + (textMode ? ' next' : '');
+    d.className = 'sel-del' + (below ? ' below' : '') + (textMode ? ' placed' : '');
     d.title = t('Eliminar');
     d.setAttribute('role', 'button');
     d.setAttribute('aria-label', t('Eliminar'));
     d.innerHTML = '<svg><use href="#i-trash"/></svg>';
-    Object.assign(d.style, anchor);
+    Object.assign(d.style, spot ? { left: spot.del[0] + 'px', top: spot.del[1] + 'px' } : anchor);
     d.addEventListener('pointerdown', onDeleteDown);
     d.addEventListener('mousedown', (e) => e.preventDefault());
     d.addEventListener('click', (e) => e.stopPropagation());
-    sel.appendChild(d);
+    put(d);
   }
   els.selLayer.appendChild(sel);
+}
+
+/**
+ * Sitio del asa de mover y del botón de borrar mientras se escribe: juntos, al lado de la caja y sin tapar otras
+ * líneas ni objetos (un toque para editarlos los pulsaría; p. ej., encima de la caja tapaban el comienzo de la
+ * línea anterior). Se prueban varios sitios por orden (a la izquierda, a la derecha, debajo y encima) y se queda el
+ * primero que no tape nada o, si todos tapan algo, el que menos. Con `keep` (el índice de un sitio) se usa ese sin
+ * más: mientras se arrastra la caja, el asa no debe saltar de sitio. Devuelve las esquinas de los dos botones (en
+ * puntos de la página, sin el giro del usuario, como la caja) y el índice del sitio.
+ */
+function buttonSpot(p, o, b, els, keep) {
+  const z = state.zoom;
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const s = (coarse ? 30 : 22) / z; // tamaño de los botones (como en el CSS)
+  const strip = (coarse ? 14 : 8) / z; // grosor de las franjas de los bordes de la caja (--t en el CSS)
+  // Separación de la caja: fuera de sus tiradores (las franjas de arriba y abajo no están en "Editar texto")
+  const gx = strip + 2 / z, gy = state.tool === 'edittext' ? 0.2 * s : strip + 2 / z;
+  const up = b.y - gy - s, down = b.y + b.h + gy;
+  const spots = [];
+  for (const x of [b.x - gx - s, b.x + b.w + gx]) {
+    spots.push({ grip: [x, up], del: [x, b.y] }); // en columna: el asa encima de la caja y el botón al lado
+    spots.push({ grip: [x, b.y], del: [x, b.y + s + 0.2 * s] }); // (o los dos hacia abajo)
+  }
+  for (const y of [down, up]) {
+    spots.push({ grip: [b.x, y], del: [b.x + s + 0.2 * s, y] }); // en fila, al principio de la caja...
+    spots.push({ grip: [b.x + b.w - 2.2 * s, y], del: [b.x + b.w - s, y] }); // ...o al final
+  }
+  spots.forEach((sp, i) => { sp.i = i; });
+  if (keep != null && spots[keep]) return spots[keep];
+  // Lo que no conviene tapar: las líneas del PDF (aunque no se esté en "Editar texto") y los demás objetos que se ven
+  const obstacles = [];
+  const lines = linesSync(p);
+  if (lines) {
+    const edited = new Set(p.objects.filter((q) => q.lineKey).map((q) => q.lineKey));
+    for (const l of lines) {
+      if (!edited.has(l.key)) obstacles.push(...(l.boxes || [{ x: l.x, y: l.top, w: l.w, h: l.bottom - l.top }]));
+    }
+  } else {
+    // Aún no se han leído: se recoloca en cuanto estén
+    getLines(p).then(() => { if (state.selection?.uid === p.uid && !drag) renderSelection(); });
+  }
+  for (const q of p.objects) {
+    if (q !== o && !q.removed && !(q.type === 'text' && !q.text?.trim())) obstacles.push(getBBox(q, p));
+  }
+  // Los botones deben quedar en la página o en el margen de la vista a sus lados. La caja y los sitios están en el
+  // espacio de la página sin girar: en una página girada 90° o 270°, los lados de la pantalla son su eje y.
+  const gut = els.wrap.offsetLeft / z;
+  const turned = p.rotation % 180 !== 0;
+  const mx = turned ? 0 : gut, my = turned ? gut : 0;
+  const fits = ([x, y]) => x >= -mx && x + s <= p.w + mx && y >= -my && y + s <= p.h + my;
+  const covered = ([x, y]) => obstacles.reduce((sum, r) =>
+    sum + Math.max(0, Math.min(x + s, r.x + r.w) - Math.max(x, r.x)) * Math.max(0, Math.min(y + s, r.y + r.h) - Math.max(y, r.y)), 0);
+  let best = null, bestArea = Infinity;
+  for (const sp of spots) {
+    if (!fits(sp.grip) || !fits(sp.del)) continue;
+    const area = covered(sp.grip) + covered(sp.del);
+    if (area < bestArea - 0.01) { best = sp; bestArea = area; }
+    if (area < 0.01) break;
+  }
+  return best || spots[4]; // si no cabe en ningún sitio (caja enorme o diminuta en una página pequeña), debajo
 }
 
 // ---------- Selección ----------
@@ -766,6 +889,7 @@ export function selectedObject() {
 
 // ---------- Arrastres ----------
 let drag = null;
+let spotLock = null; // sitio del asa y del botón de borrar del texto seleccionado (ver buttonSpot)
 let suppressClickUntil = 0; // tras arrastrar, el "clic" que genera el navegador no debe crear ni cerrar nada
 const touches = new Set();
 document.addEventListener('pointerdown', (e) => {
@@ -1015,15 +1139,26 @@ function startMove(e, p, o, wasSelected, fromGrip = false) {
   const orig = structuredClone(o);
   const start = toLocal(p, e.clientX, e.clientY);
   let moved = false;
+  let guides = null; // guías de alineación (ver guias.js)
   trackDrag(e, p, (ev) => {
     const q = toLocal(p, ev.clientX, ev.clientY);
     const dx = q.x - start.x, dy = q.y - start.y;
     if (!moved && Math.hypot(dx, dy) * state.zoom < 4) return;
     moved = true;
+    guides ||= moveGuides(p, o);
     translate(o, orig, dx, dy);
     updateObjEl(p, o);
+    // Cerca de algo con lo que alinearse (el centro de la página, otro objeto, una palabra...), se imanta a ello
+    const [sx, sy] = guides.snap(ev);
+    if (sx || sy) {
+      translate(o, orig, dx + sx, dy + sy);
+      updateObjEl(p, o);
+    }
+    guides.draw();
     renderSelection();
   }, (cancelled, ev) => {
+    guides?.end();
+    if (moved) renderSelection(); // el asa y el botón de borrar, al mejor sitio para la caja ya soltada
     if (moved) {
       suppressClickUntil = performance.now() + 400;
       commit(o, snap);
@@ -1102,6 +1237,7 @@ function startResize(e, p, hd) {
     renderSelection();
   }, (cancelled, ev) => {
     if (moved) {
+      renderSelection(); // el asa y el botón de borrar, al mejor sitio para la caja ya cambiada
       suppressClickUntil = performance.now() + 400;
       commit(o, snap);
       emit('selection');
@@ -1336,9 +1472,12 @@ function createText(p, pt) {
   const s = state.style;
   const snap = snapshot();
   const o = {
-    id: uid(), type: 'text', x: pt.x, y: pt.y - s.size * 0.6, size: s.size, family: s.family,
+    id: uid(), type: 'text', x: pt.x, y: pt.y, size: s.size, family: s.family,
     bold: s.bold, italic: s.italic, color: s.textColor, text: '',
   };
+  // En una página que se ve girada, el texto se gira al revés para que salga derecho
+  if (p.rotation) o.rot = (360 - p.rotation) % 360;
+  [o.x, o.y] = objPoint(o, 0, -s.size * 0.6);
   p.objects.push(o);
   renderObjects(p);
   select(p.uid, o.id);
@@ -1501,6 +1640,7 @@ export function startEditing(p, o, snap, ev) {
     el.classList.toggle('is-empty', !el.textContent);
     if (editing?.el === el) {
       editing.lastAction = 'type';
+      state.dirty = true; // aunque aún no sea un paso del historial (p. ej. a mitad de palabra), ya hay cambios
       // Si aún no había nada que deshacer, el primer carácter es un paso (así el botón Deshacer funciona enseguida)
       if (!editing.typed && !canUndo()) flushTyping();
       editing.typed = true;
@@ -1765,6 +1905,9 @@ export function duplicateSelected() {
 export function nudgeSelected(dx, dy) {
   const sel = selectedObject();
   if (!sel) return;
+  // La flecha mueve en la dirección que se ve en pantalla, aunque la página se vea girada
+  const r = sel.p.rotation || 0;
+  [dx, dy] = r === 90 ? [dy, -dx] : r === 180 ? [-dx, -dy] : r === 270 ? [-dy, dx] : [dx, dy];
   const snap = snapshot();
   translate(sel.o, structuredClone(sel.o), dx, dy);
   updateObjEl(sel.p, sel.o);
@@ -1835,9 +1978,15 @@ export function addImage(assetId, { maxW = 0.45, signature = false } = {}) {
   let h = (w * a.h) / a.w;
   if (h > p.h * 0.6) { h = p.h * 0.6; w = (h * a.w) / a.h; }
   const snap = snapshot();
-  const o = { id: uid(), type: 'image', asset: assetId, x: c.x - w / 2, y: c.y - h / 2, w, h, opacity: 1 };
-  o.x = Math.min(p.w - w, Math.max(0, o.x));
-  o.y = Math.min(p.h - h, Math.max(0, o.y));
+  const o = { id: uid(), type: 'image', asset: assetId, x: c.x, y: c.y, w, h, opacity: 1 };
+  // En una página que se ve girada, la imagen se gira al revés para que salga derecha; su centro, donde se mira
+  if (p.rotation) o.rot = (360 - p.rotation) % 360;
+  const [mx, my] = objPoint(o, w / 2, h / 2);
+  o.x += c.x - mx;
+  o.y += c.y - my;
+  const bb = getBBox(o);
+  o.x += Math.min(p.w - bb.w, Math.max(0, bb.x)) - bb.x;
+  o.y += Math.min(p.h - bb.h, Math.max(0, bb.y)) - bb.y;
   p.objects.push(o);
   renderObjects(p);
   checkpointFrom(snap);

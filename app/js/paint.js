@@ -1,6 +1,6 @@
 // Cuentagotas y cubo de relleno: qué color se ve en un punto de la página y qué objeto hay debajo de él.
 import { getEls } from './viewer.js';
-import { getBBox, arrowHead } from './objects.js';
+import { getBBox, arrowHead, objLocal } from './objects.js';
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const hex = (rgb) => '#' + rgb.map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0')).join('');
@@ -79,8 +79,9 @@ export function hitObject(p, x, y, slop = 0) {
 function imagePixel(p, o, x, y) {
   const img = getEls(p.uid)?.objLayer.querySelector(`.obj[data-id="${o.id}"] img`);
   if (!img?.naturalWidth || !o.w || !o.h) return null;
-  const u = clamp(Math.floor(((x - o.x) / o.w) * img.naturalWidth), 0, img.naturalWidth - 1);
-  const v = clamp(Math.floor(((y - o.y) / o.h) * img.naturalHeight), 0, img.naturalHeight - 1);
+  const [lx, ly] = objLocal(o, x, y); // (la imagen puede estar girada)
+  const u = clamp(Math.floor((lx / o.w) * img.naturalWidth), 0, img.naturalWidth - 1);
+  const v = clamp(Math.floor((ly / o.h) * img.naturalHeight), 0, img.naturalHeight - 1);
   const c = document.createElement('canvas');
   c.width = c.height = 1;
   const ctx = c.getContext('2d', { willReadFrequently: true });

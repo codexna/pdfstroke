@@ -1,7 +1,7 @@
 // Genera el PDF final con pdf-lib: orden/rotación de páginas y objetos dibujados como contenido vectorial.
 import { t } from './i18n.js';
 import { state, isNoopEdit } from './state.js';
-import { textMetrics, arrowHead, ellipseK, clampScale, layoutTextLines, fontsReady, textBox, getBBox } from './objects.js';
+import { textMetrics, arrowHead, ellipseK, clampScale, layoutTextLines, fontsReady, textBox, getBBox, rotOf, objPoint } from './objects.js';
 import { getLines } from './textlayer.js';
 import { removeTextInZones, collectGarbage } from './textremove.js';
 import { toPdfText } from './pdftext.js';
@@ -279,12 +279,39 @@ function flattenAnnotsUnder(doc, page, rects, white) {
   return done;
 }
 
+/**
+ * Quita de la página las anotaciones de texto sustituidas por su edición, con sus ventanas de comentario, y vacía sus
+ * datos: pueden seguir enlazadas desde otro sitio (una respuesta, la estructura de un PDF etiquetado) y su texto
+ * antiguo no debe quedar dentro del archivo.
+ */
+function dropEditedAnnots(doc, node, indexes) {
+  const arr = node.Annots();
+  if (!arr) return;
+  const ctx = doc.context;
+  const refs = indexes.map((i) => arr.get(i)).filter((r) => r instanceof PDFRef);
+  const gone = new Set(refs.map(String));
+  const all = [...indexes];
+  arr.asArray().forEach((r, i) => {
+    const d = ctx.lookup(r);
+    if (d instanceof PDFDict && d.get(PDFName.of('Subtype'))?.toString() === '/Popup' && gone.has(String(d.get(PDFName.of('Parent'))))) all.push(i);
+  });
+  const KEEP = new Set(['/Type', '/Subtype', '/Rect', '/F', '/P', '/StructParent']);
+  for (const r of refs) {
+    const d = ctx.lookup(r);
+    if (d instanceof PDFDict) for (const k of d.keys()) if (!KEEP.has(k.asString())) d.delete(k);
+  }
+  removeAnnotsAt(node, all);
+}
+
 export async function buildPdf() {
   replacedChars = 0;
   flattenedFields = 0;
+  // Se trabaja con una copia de las páginas tal y como están ahora: si mientras se genera el PDF se deshace o se
+  // cambia algo, el resultado no se mezcla
+  const pages = JSON.parse(JSON.stringify(state.pages));
   await fontsReady; // el ajuste de líneas se mide con las fuentes de pantalla
   const loaded = new Map(); // id de origen -> PDFDocument de pdf-lib
-  const firstSrc = state.pages.find((p) => p.src != null)?.src;
+  const firstSrc = pages.find((p) => p.src != null)?.src;
   let out;
   if (firstSrc != null) {
     out = await PDFDocument.load(state.sources.get(firstSrc).bytes, { ignoreEncryption: true, updateMetadata: false });
@@ -298,7 +325,7 @@ export async function buildPdf() {
   const used = new Set();
   const finalPages = [];
   const annotIdx = []; // por página: posiciones en /Annots de las anotaciones de texto sustituidas por su edición
-  for (const p of state.pages) {
+  for (const p of pages) {
     let page, srcNode = null;
     if (p.src == null) {
       page = PDFPage.create(out);
@@ -331,7 +358,7 @@ export async function buildPdf() {
   // Zona de cada línea original editada (crece si su caja ocupa más líneas que la original)
   const zones = new Map();
   const pageLines = new Map();
-  for (const p of state.pages) {
+  for (const p of pages) {
     if (p.objects.some((o) => o.cover && !o.annot)) pageLines.set(p, await getLines(p));
   }
   const specOf = (o, p) => {
@@ -345,8 +372,8 @@ export async function buildPdf() {
 
   // 3) Quitar del contenido el texto original que se ha editado o tapado, y las anotaciones de texto editadas
   const removalFailed = new Set();
-  for (let i = 0; i < state.pages.length; i++) {
-    const p = state.pages[i];
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
     const toPdf = viewToPdf(p.view, p.baseRotate || 0);
     const rects = editedLines(p).flatMap((o) => partsOf(o, p));
     if (p.src != null) for (const o of p.objects) if (o.whiteout) rects.push(o);
@@ -358,14 +385,14 @@ export async function buildPdf() {
         console.warn(`Página ${i + 1}: el texto original queda tapado pero no eliminado`, err);
       }
     }
-    if (annotIdx[i].length) removeAnnotsAt(finalPages[i].node, annotIdx[i]);
+    if (annotIdx[i].length) dropEditedAnnots(out, finalPages[i].node, annotIdx[i]);
   }
 
   // Imágenes del PDF original movidas, sustituidas o eliminadas: se quita la original. Si no se encuentra (p. ej. una
   // imagen dentro del contenido de otra forma), se tapa con blanco
   const imgCovers = new Map(); // página -> zonas que tapar
-  for (let i = 0; i < state.pages.length; i++) {
-    const p = state.pages[i];
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
     if (p.src == null) continue;
     const objs = p.objects.filter((o) => o.origImg && !isNoopEdit(o));
     if (!objs.length) continue;
@@ -384,8 +411,8 @@ export async function buildPdf() {
   // el color del fondo, como se ve en pantalla. El que sí se quitó no se tapa: así no se borra nada de alrededor
   // (las líneas de una tabla, un fondo de color...)
   const mustCover = new Set();
-  for (let i = 0; i < state.pages.length; i++) {
-    const p = state.pages[i];
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
     for (const o of ocrEdits(p)) mustCover.add(o);
     const objs = editedLines(p);
     if (!objs.length) continue;
@@ -396,8 +423,8 @@ export async function buildPdf() {
   }
 
   // Anotaciones que quedan debajo de algo añadido: pasan a ser parte de la página (ver flattenAnnotsUnder)
-  for (let i = 0; i < state.pages.length; i++) {
-    const p = state.pages[i];
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
     const objs = p.objects.filter((o) => !isNoopEdit(o));
     if (!objs.length || !finalPages[i].node.Annots()) continue;
     const toPdf = viewToPdf(p.view, p.baseRotate || 0);
@@ -427,8 +454,8 @@ export async function buildPdf() {
   };
   const images = {};
 
-  for (let i = 0; i < state.pages.length; i++) {
-    const p = state.pages[i];
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
     const page = finalPages[i];
     const R = p.baseRotate || 0;
     page.setRotation(degrees((R + p.rotation) % 360));
@@ -483,10 +510,11 @@ export async function buildPdf() {
           const ops = [pushGraphicsState()];
           if (op < 1) ops.push(setGraphicsState(page.node.newExtGState('GS', out.context.obj({ Type: 'ExtGState', ca: op, CA: op }))));
           ops.push(beginText());
-          const angle = toRadians(degrees(R));
+          // Un texto añadido en una página que se veía girada lleva su propio giro
+          const angle = toRadians(degrees(R - rotOf(o)));
           let curFont = null, curColor = null, curTz = 1;
           for (let k = 0; k < lines.length; k++) {
-            const y = o.y + baseline + k * pitch;
+            const ly = baseline + k * pitch; // línea base, medida desde la esquina del texto
             for (const piece of lines[k]) {
               const font = await getFont(piece.family, piece.bold, piece.italic);
               const t = clean(piece.text, font);
@@ -501,18 +529,18 @@ export async function buildPdf() {
               const col = piece.color || o.color;
               if (col !== curColor) { ops.push(setFillingColor(color(col))); curColor = col; }
               if (Math.abs(tz - curTz) > 1e-4) { ops.push(setCharacterSqueeze(tz * 100)); curTz = tz; }
-              const write = (str, vx) => {
-                const [X, Y] = P(vx, y);
+              const write = (str, lx) => {
+                const [X, Y] = P(...objPoint(o, lx, ly));
                 ops.push(rotateAndSkewTextRadiansAndTranslate(angle, 0, 0, X, Y), showText(font.encodeText(str)));
               };
-              const x0 = o.x + piece.x * hs;
+              const x0 = piece.x * hs;
               if (!above.length) { write(t, x0); continue; }
               // Letra a letra, por su centro (en el PDF cada letra avanza su ancho en la fuente, con la escala horizontal)
-              const cy = y - 0.35 * o.size;
+              const cy = ly - 0.35 * o.size;
               let run = '', runX = x0, cx = x0;
               for (const ch of t) {
                 const adv = plainWidth(font, ch, o.size) * tz;
-                if (hidden(cx + adv / 2, cy)) { if (run) write(run, runX); run = ''; } else { if (!run) runX = cx; run += ch; }
+                if (hidden(...objPoint(o, cx + adv / 2, cy))) { if (run) write(run, runX); run = ''; } else { if (!run) runX = cx; run += ch; }
                 cx += adv;
               }
               if (run) write(run, runX);
@@ -529,8 +557,9 @@ export async function buildPdf() {
             const bytes = dataUrlToBytes(a.src);
             images[o.asset] = a.mime === 'image/jpeg' ? await out.embedJpg(bytes) : await out.embedPng(bytes);
           }
-          const [X, Y] = P(o.x, o.y + o.h);
-          page.drawImage(images[o.asset], { x: X, y: Y, width: o.w, height: o.h, rotate: degrees(R), opacity: op });
+          // Su esquina de abajo a la izquierda (con el giro propio, si se añadió en una página que se veía girada)
+          const [X, Y] = P(...objPoint(o, 0, o.h));
+          page.drawImage(images[o.asset], { x: X, y: Y, width: o.w, height: o.h, rotate: degrees(R - rotOf(o)), opacity: op });
           break;
         }
         case 'rect':

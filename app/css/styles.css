@@ -273,24 +273,30 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .handle[data-h="e"], .handle[data-h="w"] { cursor: ew-resize; }
 .grip {
   position: absolute; pointer-events: auto; touch-action: none; cursor: move;
-  width: calc(22px / var(--z)); height: calc(22px / var(--z)); transform: translate(-120%, -120%);
+  width: calc(22px / var(--z)); height: calc(22px / var(--z));
   display: grid; place-items: center; border-radius: 50%; background: var(--select); color: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
 }
-.grip.below { transform: translate(40%, 50%); }
 .grip svg { width: 70%; height: 70%; stroke-width: 2.2; }
-/* Botón de borrar la selección: en el sitio del asa de mover o, si la hay, a su derecha */
+/* Botón de borrar la selección: en la esquina de la caja o, al escribir, junto al asa de mover (el sitio de los dos
+   lo calcula buttonSpot en objects.js, para que no tapen otras líneas) */
 .sel-del {
   position: absolute; pointer-events: auto; touch-action: none; cursor: pointer;
   width: calc(22px / var(--z)); height: calc(22px / var(--z)); transform: translate(-120%, -120%);
   display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
 }
-.sel-del.next { transform: translate(20%, -120%); }
 .sel-del.below { transform: translate(40%, 50%); }
-.sel-del.below.next { transform: translate(180%, 50%); }
+.sel-del.placed { transform: none; }
 .sel-del:active { background: var(--accent-hover); }
 .sel-del svg { width: 62%; height: 62%; stroke-width: 2.2; }
+/* Guías al arrastrar un objeto (ver guias.js): alineado con otro objeto o con el texto; discontinuas, centrado en la página */
+.guides { position: absolute; inset: 0; pointer-events: none; }
+.guide { position: absolute; background: #e8178a; }
+.guide.v { width: calc(1px / var(--z)); transform: translateX(-50%); }
+.guide.h { height: calc(1px / var(--z)); transform: translateY(-50%); }
+.guide.v.center { background: repeating-linear-gradient(to bottom, #e8178a 0 calc(6px / var(--z)), transparent 0 calc(10px / var(--z))); }
+.guide.h.center { background: repeating-linear-gradient(to right, #e8178a 0 calc(6px / var(--z)), transparent 0 calc(10px / var(--z))); }
 @media (pointer: coarse) {
   .sel { --t: calc(14px / var(--z)); }
   .handle { width: calc(22px / var(--z)); height: calc(22px / var(--z)); }

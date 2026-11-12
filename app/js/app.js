@@ -1,6 +1,6 @@
 // Punto de entrada: abrir/guardar documentos, barra de herramientas, propiedades, atajos y PWA.
 import { t } from './i18n.js';
-import { state, on, emit, uid, undo, redo, canUndo, canRedo, resetHistory, setDefaultStyle } from './state.js';
+import { state, on, emit, uid, undo, redo, canUndo, canRedo, resetHistory, setDefaultStyle, snapshot } from './state.js';
 import { buildPages, fitWidth, setZoom, scheduleRender, scrollToPoint, getEls, viewerEl, updateCurrentPage } from './viewer.js';
 import {
   renderObjects, renderSelection, applyStyle, deleteSelected, duplicateSelected, nudgeSelected, addImage,
@@ -326,11 +326,39 @@ function loadImage(src) {
 }
 const fileToDataUrl = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
 
+/** Orientación EXIF de una foto JPEG (1 = normal), leída de su cabecera. */
+function jpegOrientation(dataUrl) {
+  try {
+    const at = dataUrl.indexOf(',') + 1;
+    const bin = atob(dataUrl.slice(at, at + 87384)); // los primeros 64 KB bastan
+    const b = (i) => bin.charCodeAt(i);
+    if (b(0) !== 0xff || b(1) !== 0xd8) return 1;
+    for (let i = 2; i + 4 < bin.length;) {
+      if (b(i) !== 0xff) return 1;
+      const marker = b(i + 1), len = (b(i + 2) << 8) | b(i + 3);
+      if (marker === 0xda) return 1;
+      if (marker === 0xe1 && bin.slice(i + 4, i + 10) === 'Exif\0\0') {
+        const t = i + 10, le = bin.slice(t, t + 2) === 'II';
+        const u16 = (o) => (le ? b(t + o) | (b(t + o + 1) << 8) : (b(t + o) << 8) | b(t + o + 1));
+        const u32 = (o) => (le ? (u16(o) | (u16(o + 2) << 16)) >>> 0 : ((u16(o) << 16) | u16(o + 2)) >>> 0);
+        const ifd = u32(4);
+        for (let k = 0, n = u16(ifd); k < n; k++) if (u16(ifd + 2 + k * 12) === 0x0112) return u16(ifd + 2 + k * 12 + 8) || 1;
+        return 1;
+      }
+      i += 2 + len;
+    }
+  } catch { /* cabecera ilegible: se usa tal cual */ }
+  return 1;
+}
+
 async function createAsset(dataUrl, mime) {
   const img = await loadImage(dataUrl);
   let w = img.naturalWidth, h = img.naturalHeight;
   const MAX = 2400;
-  if (mime !== 'image/png' && mime !== 'image/jpeg' || Math.max(w, h) > MAX) {
+  // Una foto del móvil girada sólo con la marca EXIF se ve bien en pantalla, pero el PDF no entiende esa marca: se
+  // vuelve a guardar ya girada (el navegador la aplica al dibujarla)
+  const turned = mime === 'image/jpeg' && jpegOrientation(dataUrl) !== 1;
+  if (turned || mime !== 'image/png' && mime !== 'image/jpeg' || Math.max(w, h) > MAX) {
     const k = Math.min(1, MAX / Math.max(w, h));
     w = Math.round(w * k); h = Math.round(h * k);
     const c = document.createElement('canvas');
@@ -364,9 +392,15 @@ async function insertSignature() {
 }
 
 // ---------- Guardar y compartir ----------
+let savedSnap = null; // cómo estaba el documento al generar el último PDF
+
+/** Tras guardar, el documento queda sin cambios pendientes, salvo que se haya tocado algo mientras se generaba. */
+function markSaved() { state.dirty = snapshot() !== savedSnap; }
+
 async function makeBlob() {
   commitPendingStyle();
   syncEditing();
+  savedSnap = snapshot();
   busy(t('Generando PDF…'));
   try {
     const bytes = await buildPdf();
@@ -463,14 +497,14 @@ async function saveImpl() {
       await deliver(async () => {
         try {
           const saved = await saveToDocuments(blob, state.fileName);
-          state.dirty = false;
+          markSaved();
           addRecent(saved, new Uint8Array(await blob.arrayBuffer()), state.pages.length);
           return { title: t('Archivo guardado'), where: inDocs(saved) };
         } catch (err) {
           // Si no se puede escribir en Documentos, se ofrece guardarlo donde se quiera con el menú de compartir
           console.warn('No se pudo guardar en Documentos', err);
           await shareNative(blob, state.fileName);
-          state.dirty = false;
+          markSaved();
           return null;
         }
       });
@@ -478,6 +512,14 @@ async function saveImpl() {
       if (!/cancel/i.test(err?.message || '')) toast(t('Error al guardar:') + ' ' + (err?.message || err), 'error');
     }
     return;
+  }
+  // El permiso para escribir en el archivo abierto se pide ya, mientras el clic sigue "activo": después de generar
+  // el PDF (que puede tardar) el navegador lo rechazaría y se descargaría una copia en su lugar
+  const opened = state.fileHandle;
+  if (opened?.createWritable) {
+    try {
+      if ((await opened.queryPermission?.({ mode: 'readwrite' })) !== 'granted') await opened.requestPermission?.({ mode: 'readwrite' });
+    } catch { /* si no se puede, se descargará */ }
   }
   if (!(await canDownload())) return;
   try {
@@ -501,7 +543,7 @@ async function saveImpl() {
         state.fileHandle = handle;
         state.fileName = handle.name;
         $('fileName').textContent = handle.name;
-        state.dirty = false;
+        markSaved();
         webDownloaded(handle.name);
         return;
       } catch (err) {
@@ -509,7 +551,7 @@ async function saveImpl() {
       }
     }
     download(blob, state.fileName);
-    state.dirty = false;
+    markSaved();
     addRecent(state.fileName, new Uint8Array(await blob.arrayBuffer()), state.pages.length);
     toast(t('PDF descargado ✓'));
   } catch (err) {
@@ -524,8 +566,14 @@ async function shareImpl() {
     const blob = await makeBlob();
     if (native) { await deliver(async () => { await shareNative(blob, state.fileName); return null; }); return; }
     const file = new File([blob], state.fileName, { type: 'application/pdf' });
-    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: state.fileName });
-    else download(blob, state.fileName);
+    if (!navigator.canShare?.({ files: [file] })) { download(blob, state.fileName); return; }
+    try {
+      await navigator.share({ files: [file], title: state.fileName });
+    } catch (err) {
+      // Si generar el PDF tardó, el navegador ya no deja abrir el menú de compartir: se descarga
+      if (err?.name !== 'NotAllowedError') throw err;
+      download(blob, state.fileName);
+    }
   } catch (err) {
     if (err?.name !== 'AbortError' && !/cancel/i.test(err?.message || '')) toast(t('No se pudo compartir:') + ' ' + (err?.message || err), 'error');
   }
@@ -1226,6 +1274,26 @@ window.addEventListener('beforeunload', (e) => {
 // (en la app de Android todo va ya dentro de la app: no hace falta el service worker)
 if (!native && 'serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker no registrado', err));
+}
+
+// App de Android: «Abrir con» / «Compartir con» PDF Stroke (plugin AbrirCon, generado por construir.py)
+const AbrirCon = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.AbrirCon : null;
+if (AbrirCon) {
+  const abrirRecibido = (r) => {
+    if (!r?.datos) return;
+    const bin = atob(r.datos);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    let nombre = r.nombre || 'documento.pdf';
+    if (!/\.[a-z0-9]{2,5}$/i.test(nombre)) {
+      const ext = { 'application/pdf': '.pdf', 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' }[r.tipo]
+        || (/wordprocessingml/.test(r.tipo || '') ? '.docx' : '.pdf');
+      nombre += ext;
+    }
+    openFiles([new File([bytes], nombre, { type: r.tipo || '' })]);
+  };
+  AbrirCon.addListener('archivo', abrirRecibido);
+  AbrirCon.pendiente().then(abrirRecibido).catch((err) => toast(t('No se pudo abrir:') + ' ' + (err?.message || err), 'error'));
 }
 
 if ('launchQueue' in window) {

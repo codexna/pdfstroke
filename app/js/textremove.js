@@ -3,7 +3,7 @@
 // antiguo no reaparece al copiar, buscar o extraer. Ante cualquier construcción no soportada se deja el contenido
 // tal cual (el texto sigue tapado visualmente), nunca se arriesga a estropear la página.
 const {
-  PDFName, PDFDict, PDFArray, PDFNumber, PDFRef, PDFStream, PDFRawStream, decodePDFRawStream, StandardFontEmbedder,
+  PDFName, PDFDict, PDFArray, PDFNumber, PDFRef, PDFNull, PDFStream, PDFRawStream, decodePDFRawStream, StandardFontEmbedder,
 } = PDFLib;
 
 // ---------- Analizador léxico de flujos de contenido ----------
@@ -464,7 +464,12 @@ function rewrite(job, bytes, resources, gs0, depth) {
     }
     // La copia lleva sus propios recursos si los necesita (o si usaba los de quien la dibuja): así éstos pueden cambiar
     if (inner.forms.length || inner.dropped.length || !(own instanceof PDFDict)) {
-      entries.Resources = withForms(doc, res, inner.forms, inner.dropped);
+      // Si usaba los de quien la dibuja, sólo se quedan los XObject que dibuja ella: así no sigue enlazado el
+      // formulario original (con el texto quitado) ni nada más que no le haga falta
+      const xo = res instanceof PDFDict ? res.lookup(PDFName.of('XObject')) : null;
+      const unused = own instanceof PDFDict || !(xo instanceof PDFDict) ? []
+        : xo.keys().map((k) => k.asString().slice(1)).filter((n) => !inner.doCount.has(n));
+      entries.Resources = withForms(doc, res, inner.forms, [...inner.dropped, ...unused]);
     }
     const ref = doc.context.register(doc.context.flateStream(inner.out, entries));
     let n = 1;
@@ -607,6 +612,15 @@ export function textOrigins(bytes) {
  */
 export function collectGarbage(doc) {
   const ctx = doc.context;
+  // Una página borrada (o una copia suelta que arrastró un campo de formulario) puede seguir enlazada desde los
+  // marcadores, los destinos, la estructura de un PDF etiquetado o un campo: esos enlaces se cortan para que su
+  // contenido no quede dentro del archivo
+  const kept = new Set(doc.getPages().map((p) => p.ref.toString()));
+  const dead = (v) => {
+    if (!(v instanceof PDFRef) || kept.has(v.toString())) return false;
+    const d = ctx.lookup(v);
+    return d instanceof PDFDict && d.get(PDFName.of('Type'))?.toString() === '/Page';
+  };
   const seen = new Set();
   const stack = [ctx.trailerInfo.Root, ctx.trailerInfo.Info];
   while (stack.length) {
@@ -618,9 +632,10 @@ export function collectGarbage(doc) {
       seen.add(key);
       stack.push(ctx.lookup(o));
     } else if (o instanceof PDFDict) {
-      for (const [, v] of o.entries()) stack.push(v);
+      for (const [k, v] of o.entries()) { if (dead(v)) o.delete(k); else stack.push(v); }
     } else if (o instanceof PDFArray) {
-      for (const v of o.asArray()) stack.push(v);
+      const items = o.asArray();
+      items.forEach((v, i) => { if (dead(v)) o.set(i, PDFNull); else stack.push(v); });
     } else if (o.dict instanceof PDFDict) {
       stack.push(o.dict);
     }

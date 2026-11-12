@@ -1,12 +1,12 @@
 // Service worker: funcionamiento sin conexión y recepción de PDFs compartidos (Android).
-const VERSION = 'v29';
+const VERSION = 'v31';
 const APP_CACHE = 'editorpdf-' + VERSION;
 const SHARED_CACHE = 'editorpdf-shared';
 const OCR_CACHE = 'editorpdf-ocr-1'; // modelos del OCR del navegador (grandes): no se borran al actualizar la app
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/app.js', 'js/state.js', 'js/viewer.js', 'js/objects.js', 'js/textlayer.js', 'js/exporter.js', 'js/textremove.js', 'js/pdftext.js',
-  'js/thumbs.js', 'js/signature.js', 'js/preview.js', 'js/paint.js', 'js/word.js', 'js/pro.js', 'js/docx.js', 'js/convert.js', 'js/ocr.js', 'js/i18n.js', 'js/firma-digital.js', 'js/pdfimages.js', 'js/voz.js', 'js/lectura.js', 'js/herramientas.js', 'js/cifrado.js', 'js/recientes.js', 'js/acciones.js', 'js/anuncios-web.js', 'js/valorar.js', ...['en', 'pt', 'fr', 'de', 'it'].map((l) => `js/lang/${l}.js`),
+  'js/thumbs.js', 'js/signature.js', 'js/preview.js', 'js/paint.js', 'js/guias.js', 'js/word.js', 'js/pro.js', 'js/docx.js', 'js/convert.js', 'js/ocr.js', 'js/i18n.js', 'js/firma-digital.js', 'js/pdfimages.js', 'js/voz.js', 'js/lectura.js', 'js/herramientas.js', 'js/cifrado.js', 'js/recientes.js', 'js/acciones.js', 'js/anuncios-web.js', 'js/valorar.js', ...['en', 'pt', 'fr', 'de', 'it'].map((l) => `js/lang/${l}.js`),
   'vendor/pdf.min.js', 'vendor/pdf.worker.min.js', 'vendor/pdf-lib.min.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/fonts/fonts.css',

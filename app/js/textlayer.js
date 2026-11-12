@@ -71,15 +71,17 @@ async function extractLines(p) {
   for (const it of tc.items) {
     if (typeof it.str !== 'string' || !it.str.trim()) continue;
     const t = pdfjsLib.Util.transform(vp.transform, it.transform);
-    // Sólo texto horizontal, sin espejo
-    if (t[0] <= 0 || t[3] >= 0 || Math.abs(t[1]) > 0.02 * t[0] || Math.abs(t[2]) > 0.02 * Math.abs(t[3])) continue;
-    const size = Math.hypot(t[2], t[3]);
+    // Sólo texto horizontal, sin espejo. El inclinado (cursiva hecha inclinando las letras) cuenta como cursiva
+    if (t[0] <= 0 || t[3] >= 0 || Math.abs(t[1]) > 0.02 * t[0] || Math.abs(t[2]) > 0.4 * Math.abs(t[3])) continue;
+    const slanted = Math.abs(t[2]) > 0.02 * Math.abs(t[3]);
+    const size = Math.abs(t[3]);
     if (size < 1 || it.width <= 0) continue;
     const st = tc.styles[it.fontName] || {};
     let asc = st.ascent, desc = st.descent;
     if (!(asc > 0.3 && asc < 1.5)) asc = 0.8;
     if (!(desc < 0 && desc > -0.8)) desc = -0.2;
-    const f = (fonts[it.fontName] ||= fontInfo(page, it.fontName, st));
+    let f = (fonts[it.fontName] ||= fontInfo(page, it.fontName, st));
+    if (slanted && !f.italic) f = { ...f, italic: true };
     items.push({
       str: it.str, x: t[4], base: t[5], size, w: it.width * vp.scale,
       top: t[5] - asc * size, bottom: t[5] - desc * size,
@@ -96,6 +98,23 @@ async function extractLines(p) {
     else rows.push({ base: it.base, size: it.size, items: [it] });
   }
 
+  // Subíndices y superíndices (más pequeños, a la altura de una línea mayor y junto a ella, como el 2 de H₂O): son
+  // parte de esa línea. Si no, al editarla se borrarían del PDF sin estar en su texto
+  const ext = rows.map((r) => ({
+    top: Math.min(...r.items.map((i) => i.top)), bottom: Math.max(...r.items.map((i) => i.bottom)),
+    x0: Math.min(...r.items.map((i) => i.x)), x1: Math.max(...r.items.map((i) => i.x + i.w)),
+  }));
+  rows.forEach((r, k) => {
+    r.items = r.items.filter((it) => {
+      const c = it.base - 0.35 * it.size;
+      const m = rows.findIndex((q, j) => j !== k && it.size <= 0.85 * q.size && c >= ext[j].top && c <= ext[j].bottom &&
+        it.x <= ext[j].x1 + q.size && it.x + it.w >= ext[j].x0 - q.size);
+      if (m < 0) return true;
+      rows[m].items.push({ ...it, script: true });
+      return false;
+    });
+  });
+
   // Dentro de cada fila, separar en segmentos por huecos grandes o tamaños distintos.
   // Los cambios de estilo (negrita, cursiva, otra fuente) dentro de un segmento se guardan como "tramos".
   const lines = [];
@@ -104,8 +123,11 @@ async function extractLines(p) {
     let seg = null;
     for (const it of row.items) {
       const gap = seg ? it.x - seg.right : 0;
-      const same = seg && Math.abs(it.size - seg.size) <= 0.05 * seg.size && gap <= seg.size * 1.1 && gap >= -seg.size * 0.6;
+      // Un subíndice o superíndice se une a lo que tenga al lado aunque su tamaño sea otro
+      const sized = it.script || seg?.scriptOnly || Math.abs(it.size - seg?.size) <= 0.05 * seg?.size;
+      const same = seg && sized && gap <= Math.max(seg.size, it.size) * 1.1 && gap >= -Math.max(seg.size, it.size) * 0.6;
       if (same) {
+        if (seg.scriptOnly && !it.script) Object.assign(seg, { scriptOnly: false, size: it.size, base: it.base });
         const sep = gap > seg.size * 0.12 && !/\s$/.test(seg.text) && !/^\s/.test(it.str) ? ' ' : '';
         const last = seg.runs[seg.runs.length - 1];
         if (last.fkey === it.fkey) last.text += sep + it.str;
@@ -117,7 +139,7 @@ async function extractLines(p) {
       } else {
         seg = {
           text: it.str, x: it.x, right: it.x + it.w, base: it.base, size: it.size, top: it.top, bottom: it.bottom,
-          runs: [{ fkey: it.fkey, ...it.font, text: it.str }],
+          runs: [{ fkey: it.fkey, ...it.font, text: it.str }], scriptOnly: !!it.script,
         };
         lines.push(seg);
       }
