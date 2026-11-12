@@ -22,3 +22,4 @@ ul.guias { list-style: none; padding: 0; display: grid; gap: 10px; }
 ul.guias li a { display: block; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; text-decoration: none; color: var(--text); background: var(--card); }
 ul.guias li a strong { color: var(--red); }
 footer { color: var(--muted); font-size: .9rem; text-align: center; padding: 0 16px 32px; }
+header a.idioma { margin-left: auto; font-size: .95rem; }
