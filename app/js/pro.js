@@ -1,8 +1,8 @@
 import { t } from './i18n.js';
 // Monetización. App de Android: anuncio antes de guardar o convertir, límite de descargas diarias en la versión
 // gratuita y suscripción "Pro" o pago de por vida (Google Play) que quita los anuncios y el límite.
-// Versión web (pdfstroke.com): el mismo límite diario; Pro se compra en la web (Lemon Squeezy, que da un código de
-// licencia) y los anuncios son de AdSense (ver anuncios-web.js).
+// Versión web (pdfstroke.com): el mismo límite diario y anuncios de AdSense (ver anuncios-web.js). Pro no se vende en
+// la web: se ofrece la app de Android (Lemon Squeezy cerró y rechazó la tienda el 17 nov 2026; falta otro proveedor).
 
 // ---- Configuración: CAMBIAR antes de publicar (ver LEEME-ANDROID.md, "Anuncios y suscripción") ----
 // Identificadores de AdMob (cuenta del autor). El de la app (ca-app-pub-...~...) lo copia
@@ -31,14 +31,17 @@ const PLANES = { // precios de reserva si Google Play no responde
 };
 export const DESCARGAS_GRATIS = 3; // por día
 
-// ---- Pro en la web: tienda de Lemon Squeezy (CAMBIAR al crear la cuenta; ver LEEME-ANDROID.md, «Versión web») ----
+// ---- Pro en la web: SIN TIENDA. Lemon Squeezy cierra y no admite tiendas nuevas (17 nov 2026): los enlaces están
+// vacíos, así que la web solo ofrece la app. Antes eran los de la tienda 520600, que nunca salió del modo de prueba.
+// Al elegir otro proveedor hay que cambiar estos enlaces y también licencia()/activarLicencia(), que usan la API de
+// licencias de Lemon Squeezy. ----
 // Enlaces de compra (checkout) de cada plan del producto «PDF Stroke Pro (web)» y número de la tienda (para comprobar
 // que la licencia es de esta tienda). Un plan con el enlace vacío no se muestra; sin ninguno, en la web solo se
 // ofrece la app de Android. Los precios de la web (con IVA) son distintos de los de Google Play.
 const WEB_COMPRA = {
-  mensual: 'https://pdfstroke.lemonsqueezy.com/checkout/buy/a0844078-9135-4f03-9995-b0e8e0cfdc93',
-  anual: 'https://pdfstroke.lemonsqueezy.com/checkout/buy/2dc5a3ee-8b42-4dc5-96af-dc0ebefe07b2',
-  vida: 'https://pdfstroke.lemonsqueezy.com/checkout/buy/8dd27663-a8db-44c8-819f-4c273fa5ad33',
+  mensual: '',
+  anual: '',
+  vida: '',
 };
 const WEB_PRECIOS = { mensual: '1,99 €', anual: '6,99 €', vida: '12,99 €' };
 const WEB_TIENDA = 520600;
@@ -57,7 +60,8 @@ const store = {
 };
 
 let pro = store.get('editorpdf.pro', false);
-let webPro = !!store.get(WEB_LICENCIA, null); // en la web: licencia Pro activada en este navegador
+// en la web: licencia Pro activada en este navegador (sin tienda no vale ninguna: las de prueba de Lemon Squeezy no cuentan)
+let webPro = hayCompraWeb() && !!store.get(WEB_LICENCIA, null);
 let proVida = store.get('editorpdf.proVida', false); // Pro comprado de por vida (no hay suscripción que gestionar)
 let adReady = false;
 let adsStarted = null;
@@ -258,7 +262,7 @@ async function activarLicencia(codigo) {
 /** Al abrir la web: la licencia sigue siendo válida (si no hay conexión, se mantiene). */
 async function comprobarLicenciaWeb() {
   const l = store.get(WEB_LICENCIA, null);
-  if (!l?.key) return;
+  if (!l?.key || !hayCompraWeb()) return;
   try {
     const r = await licencia('validate', { license_key: l.key, ...(l.instance ? { instance_id: l.instance } : {}) });
     if (r && r.valid === false) { store.set(WEB_LICENCIA, null); webPro = false; document.body.classList.remove('is-pro'); }
