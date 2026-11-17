@@ -527,6 +527,7 @@ body.reading.tts-on .read-bottom { display: none; }
 .pro-web-key[hidden] { display: none; }
 .pro-web-key input { flex: 1; min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font: inherit; font-size: 16px; color: inherit; }
 #proModal.web .modal-card > p.muted.small:last-child { display: none; }
+#proModal.web #proSinAnuncios { display: none; } /* el editor web no tiene anuncios: Pro solo quita el límite */
 .web-ad { margin: 14px auto 0; width: 100%; min-height: 100px; text-align: center; }
 .web-ad[hidden] { display: none; }
 body.is-pro .web-ad, body.is-native .web-ad { display: none !important; }

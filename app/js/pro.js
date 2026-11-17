@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { t, LANG } from './i18n.js';
 // Monetización. App de Android: anuncio antes de guardar o convertir, límite de descargas diarias en la versión
 // gratuita y suscripción "Pro" o pago de por vida (Google Play) que quita los anuncios y el límite.
 // Versión web (pdfstroke.com): el mismo límite diario y anuncios de AdSense (ver anuncios-web.js). Pro se compra en la
@@ -254,6 +254,8 @@ export function showPro(motivo = '') {
 
 // ---------- Pro en la web (código de licencia de Polar) ----------
 const sinConexion = () => new Error(t('No se pudo comprobar el código. Revisa la conexión.'));
+// Polar limita las llamadas sin autenticar (unas pocas por segundo y dirección IP): responde 429 durante ~1 min
+const demasiados = () => new Error(t('Demasiados intentos seguidos. Espera un minuto y vuelve a probar.'));
 
 /** Llama a la API pública de licencias de Polar. Devuelve { estado: código HTTP, cuerpo: JSON o null }.
  *  Si no hay conexión o Polar tarda más de POLAR_ESPERA, lanza el error traducido de «sin conexión». */
@@ -301,6 +303,7 @@ function etiquetaNavegador() {
 /** Activa en este navegador un código de licencia comprado en la web. */
 async function activarLicencia(codigo) {
   const v = await polar('validate', { key: codigo });
+  if (v.estado === 429) throw demasiados();
   if (noExiste(v)) throw new Error(t('El código no es válido o ya no está activo (suscripción cancelada o caducada).'));
   if (v.estado !== 200 || !v.cuerpo) throw sinConexion();
   if (!vigente(v.cuerpo)) throw new Error(t('El código no es válido o ya no está activo (suscripción cancelada o caducada).'));
@@ -310,9 +313,12 @@ async function activarLicencia(codigo) {
     if (previa?.org === POLAR_ORG && previa.licencia === v.cuerpo.id && previa.activation) {
       const r = await polar('validate', { key: codigo, activation_id: previa.activation }); // ¿sigue existiendo?
       if (r.estado === 200 && vigente(r.cuerpo)) activacion = previa.activation;
+      else if (r.estado === 429) throw demasiados();
+      else if (!noExiste(r)) throw sinConexion(); // solo se crea otra activación si Polar dice que la anterior ya no existe
     }
     if (!activacion) {
       const a = await polar('activate', { key: codigo, label: etiquetaNavegador() });
+      if (a.estado === 429) throw demasiados();
       if (a.estado === 403) throw new Error(t('Este código ya está activado en el máximo de navegadores. Puedes liberar alguno en el portal de cliente de Polar.'));
       if (a.estado !== 200 || !a.cuerpo?.id) throw sinConexion();
       activacion = a.cuerpo.id;
@@ -354,6 +360,8 @@ function showProWeb(motivo) {
     $('proWebKey').hidden = !hayCompraWeb();
     $('proWebHint').hidden = !hayCompraWeb() || !POLAR_PORTAL;
     $('proWebActivate').disabled = activando;
+    $('proWebTerms').href = LANG === 'es' ? '/terminos.html' : '/terms-of-service.html';
+    $('proWebPrivacy').href = LANG === 'es' ? '/privacidad.html' : '/privacy-policy.html';
     const textos = {
       mensual: t('{precio} al mes', { precio: WEB_PRECIOS.mensual }),
       anual: t('{precio} al año', { precio: WEB_PRECIOS.anual }),
