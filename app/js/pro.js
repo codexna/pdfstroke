@@ -1,8 +1,8 @@
 import { t } from './i18n.js';
 // Monetización. App de Android: anuncio antes de guardar o convertir, límite de descargas diarias en la versión
 // gratuita y suscripción "Pro" o pago de por vida (Google Play) que quita los anuncios y el límite.
-// Versión web (pdfstroke.com): el mismo límite diario y anuncios de AdSense (ver anuncios-web.js). Pro no se vende en
-// la web: se ofrece la app de Android (Lemon Squeezy cerró y rechazó la tienda el 17 nov 2026; falta otro proveedor).
+// Versión web (pdfstroke.com): el mismo límite diario y anuncios de AdSense (ver anuncios-web.js). Pro se compra en la
+// web con Polar (polar.sh), que da un código de licencia; mientras no esté configurado, solo se ofrece la app de Android.
 
 // ---- Configuración: CAMBIAR antes de publicar (ver LEEME-ANDROID.md, "Anuncios y suscripción") ----
 // Identificadores de AdMob (cuenta del autor). El de la app (ca-app-pub-...~...) lo copia
@@ -31,22 +31,33 @@ const PLANES = { // precios de reserva si Google Play no responde
 };
 export const DESCARGAS_GRATIS = 3; // por día
 
-// ---- Pro en la web: SIN TIENDA. Lemon Squeezy cierra y no admite tiendas nuevas (17 nov 2026): los enlaces están
-// vacíos, así que la web solo ofrece la app. Antes eran los de la tienda 520600, que nunca salió del modo de prueba.
-// Al elegir otro proveedor hay que cambiar estos enlaces y también licencia()/activarLicencia(), que usan la API de
-// licencias de Lemon Squeezy. ----
-// Enlaces de compra (checkout) de cada plan del producto «PDF Stroke Pro (web)» y número de la tienda (para comprobar
-// que la licencia es de esta tienda). Un plan con el enlace vacío no se muestra; sin ninguno, en la web solo se
-// ofrece la app de Android. Los precios de la web (con IVA) son distintos de los de Google Play.
+// ---- Pro en la web: Polar (polar.sh) vende como revendedor (merchant of record) y gestiona el IVA ----
+// Cada producto de Polar (mensual, anual, de por vida) da la misma ventaja «License Keys»: el comprador recibe un código
+// de licencia (en el portal de cliente de Polar, enlazado desde el correo de compra) y lo pega en la web. La web lo
+// comprueba con la API pública de Polar (sin clave secreta; admite llamadas desde el navegador).
+// Configurado el 17 nov 2026 (Lemon Squeezy rechazó la tienda porque cierra). Productos en Polar: «PDF Stroke Pro —
+// Mensual / Anual / De por vida», con la ventaja «PDF Stroke Pro license key» (prefijo PDFS, 3 navegadores):
+// - POLAR_ORG: identificador de la organización (Polar › Settings › General › Organization ID).
+// - POLAR_PORTAL: portal de cliente, https://polar.sh/<slug-de-la-organización>/portal.
+// - WEB_COMPRA: enlaces de compra (Products › Checkout Links) de cada plan. Un plan con el enlace vacío no se
+//   muestra; sin organización o sin ningún enlace, en la web solo se ofrece la app de Android.
+// - POLAR_API: la de pruebas (sandbox.polar.sh, tarjeta 4242 4242 4242 4242) mientras se prueba.
+const POLAR_API = 'https://api.polar.sh'; // pruebas: 'https://sandbox-api.polar.sh'
+const POLAR_ORG = '9973acf6-a352-4e26-8f04-da867d16a8e4';
+const POLAR_PORTAL = 'https://polar.sh/pdfstroke/portal';
 const WEB_COMPRA = {
-  mensual: '',
-  anual: '',
-  vida: '',
+  mensual: 'https://buy.polar.sh/polar_cl_5B5Rd0zvCSjG3bCBpch4n1VVoXZOv28vuBE5w35zuKe',
+  anual: 'https://buy.polar.sh/polar_cl_ICyWhGOxWt4FUsW8HZZfgl4yh9fZbBdIHEFnF1xoK3u',
+  vida: 'https://buy.polar.sh/polar_cl_vfmyDVVpJMOPi3i1cJMD97xvY8PPJad1vKNRm0Xz5I9',
 };
+// Precios de la web (con IVA): los mismos que en Polar; son distintos de los de Google Play
 const WEB_PRECIOS = { mensual: '1,99 €', anual: '6,99 €', vida: '12,99 €' };
-const WEB_TIENDA = 520600;
-const hayCompraWeb = () => Object.values(WEB_COMPRA).some(Boolean);
+const hayCompraWeb = () => !!POLAR_ORG && Object.values(WEB_COMPRA).some(Boolean);
 const WEB_LICENCIA = 'editorpdf.licencia';
+// Última activación de Polar creada en este navegador. Se guarda aparte (no da Pro) para reutilizarla al volver a
+// meter el código (p. ej. tras cambiar la clave en el portal, que conserva las activaciones) y no gastar otra plaza.
+const WEB_ACTIVACION = 'editorpdf.activacionPolar';
+const POLAR_ESPERA = 15000; // ms: si Polar no responde, se trata como sin conexión
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=es.pdfstrike.app';
 
 const cap = window.Capacitor?.isNativePlatform?.() ? window.Capacitor : null;
@@ -60,8 +71,9 @@ const store = {
 };
 
 let pro = store.get('editorpdf.pro', false);
-// en la web: licencia Pro activada en este navegador (sin tienda no vale ninguna: las de prueba de Lemon Squeezy no cuentan)
-let webPro = hayCompraWeb() && !!store.get(WEB_LICENCIA, null);
+// en la web: licencia Pro de Polar activada en este navegador (las antiguas de prueba de Lemon Squeezy no cuentan)
+const licenciaGuardada = () => { const l = store.get(WEB_LICENCIA, null); return l?.key && l.proveedor === 'polar' && l.org === POLAR_ORG ? l : null; };
+let webPro = hayCompraWeb() && !!licenciaGuardada();
 let proVida = store.get('editorpdf.proVida', false); // Pro comprado de por vida (no hay suscripción que gestionar)
 let adReady = false;
 let adsStarted = null;
@@ -240,34 +252,90 @@ export function showPro(motivo = '') {
   });
 }
 
-// ---------- Pro en la web (licencia de Lemon Squeezy) ----------
-async function licencia(accion, datos) {
-  const body = new URLSearchParams(datos);
-  const r = await fetch('https://api.lemonsqueezy.com/v1/licenses/' + accion, {
-    method: 'POST', headers: { Accept: 'application/json' }, body,
-  });
-  return r.json();
+// ---------- Pro en la web (código de licencia de Polar) ----------
+const sinConexion = () => new Error(t('No se pudo comprobar el código. Revisa la conexión.'));
+
+/** Llama a la API pública de licencias de Polar. Devuelve { estado: código HTTP, cuerpo: JSON o null }.
+ *  Si no hay conexión o Polar tarda más de POLAR_ESPERA, lanza el error traducido de «sin conexión». */
+async function polar(accion, datos) {
+  const ctl = new AbortController();
+  const reloj = setTimeout(() => ctl.abort(), POLAR_ESPERA);
+  try {
+    const r = await fetch(`${POLAR_API}/v1/customer-portal/license-keys/${accion}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ organization_id: POLAR_ORG, ...datos }),
+      signal: ctl.signal,
+    });
+    let cuerpo = null;
+    try { cuerpo = await r.json(); } catch { /* sin cuerpo */ }
+    return { estado: r.status, cuerpo };
+  } catch {
+    throw sinConexion(); // «Failed to fetch», «Load failed» (Safari), corte por tiempo…
+  } finally {
+    clearTimeout(reloj);
+  }
+}
+
+// Polar responde 200 solo si el código está vigente; 404 si no existe, se revocó (suscripción terminada), está
+// desactivado o caducado, o si la activación indicada no existe (se liberó en el portal); 422 si el formato no vale.
+const noExiste = (r) => r.estado === 404 || r.estado === 422;
+const vigente = (k) => k?.status === 'granted' && (!k.expires_at || new Date(k.expires_at) > new Date());
+
+function quitarProWeb() {
+  store.set(WEB_LICENCIA, null); // la activación sigue en WEB_ACTIVACION para reutilizarla
+  webPro = false;
+  document.body.classList.remove('is-pro');
+}
+
+/** Nombre de la activación en el portal de Polar, para que el cliente sepa qué navegador liberar. */
+function etiquetaNavegador() {
+  const ua = navigator.userAgent || '';
+  const nav = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox'
+    : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
+  const so = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows'
+    : /Mac OS/.test(ua) ? 'macOS' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
+  return `PDF Stroke web · ${nav}${so ? ' / ' + so : ''} · ${new Date().toLocaleString('sv').slice(0, 16)}`;
 }
 
 /** Activa en este navegador un código de licencia comprado en la web. */
 async function activarLicencia(codigo) {
-  const r = await licencia('activate', { license_key: codigo, instance_name: 'Navegador ' + new Date().toISOString().slice(0, 10) });
-  if (!r?.activated && !r?.valid) throw new Error(r?.error || t('El código no es válido.'));
-  if (WEB_TIENDA && r.meta?.store_id !== WEB_TIENDA) throw new Error(t('El código no es de PDF Stroke.'));
-  store.set(WEB_LICENCIA, { key: codigo, instance: r.instance?.id || null });
+  const v = await polar('validate', { key: codigo });
+  if (noExiste(v)) throw new Error(t('El código no es válido o ya no está activo (suscripción cancelada o caducada).'));
+  if (v.estado !== 200 || !v.cuerpo) throw sinConexion();
+  if (!vigente(v.cuerpo)) throw new Error(t('El código no es válido o ya no está activo (suscripción cancelada o caducada).'));
+  let activacion = null;
+  if (v.cuerpo.limit_activations) { // límite de navegadores por código (3, puesto en Polar)
+    const previa = store.get(WEB_ACTIVACION, null);
+    if (previa?.org === POLAR_ORG && previa.licencia === v.cuerpo.id && previa.activation) {
+      const r = await polar('validate', { key: codigo, activation_id: previa.activation }); // ¿sigue existiendo?
+      if (r.estado === 200 && vigente(r.cuerpo)) activacion = previa.activation;
+    }
+    if (!activacion) {
+      const a = await polar('activate', { key: codigo, label: etiquetaNavegador() });
+      if (a.estado === 403) throw new Error(t('Este código ya está activado en el máximo de navegadores. Puedes liberar alguno en el portal de cliente de Polar.'));
+      if (a.estado !== 200 || !a.cuerpo?.id) throw sinConexion();
+      activacion = a.cuerpo.id;
+      store.set(WEB_ACTIVACION, { org: POLAR_ORG, licencia: v.cuerpo.id, activation: activacion });
+    }
+  }
+  store.set(WEB_LICENCIA, { proveedor: 'polar', org: POLAR_ORG, key: codigo, activation: activacion });
   webPro = true;
   document.body.classList.add('is-pro');
 }
 
-/** Al abrir la web: la licencia sigue siendo válida (si no hay conexión, se mantiene). */
+/** Al abrir la web: el código sigue siendo válido (si no hay conexión o Polar falla, se mantiene Pro). */
 async function comprobarLicenciaWeb() {
-  const l = store.get(WEB_LICENCIA, null);
-  if (!l?.key || !hayCompraWeb()) return;
+  if (!hayCompraWeb()) return;
+  const l = licenciaGuardada();
+  if (!l) { if (store.get(WEB_LICENCIA, null)) quitarProWeb(); return; } // licencia antigua (Lemon Squeezy u otra tienda)
   try {
-    const r = await licencia('validate', { license_key: l.key, ...(l.instance ? { instance_id: l.instance } : {}) });
-    if (r && r.valid === false) { store.set(WEB_LICENCIA, null); webPro = false; document.body.classList.remove('is-pro'); }
-  } catch { /* sin conexión */ }
+    const r = await polar('validate', { key: l.key, ...(l.activation ? { activation_id: l.activation } : {}) });
+    if (noExiste(r) || (r.estado === 200 && r.cuerpo && !vigente(r.cuerpo))) quitarProWeb();
+  } catch { /* sin conexión: se mantiene */ }
 }
+
+let activando = false; // hay una activación en curso (la ventana es una sola aunque se abra varias veces)
 
 function showProWeb(motivo) {
   return new Promise((resolve) => {
@@ -275,15 +343,17 @@ function showProWeb(motivo) {
     modal.classList.add('web');
     $('proReason').textContent = motivo;
     $('proReason').hidden = !motivo;
-    $('proStatus').textContent = webPro ? t('Ya tienes PDF Stroke Pro. ¡Gracias!') : '';
+    $('proStatus').textContent = webPro ? t('Ya tienes PDF Stroke Pro. ¡Gracias!') : activando ? t('Un momento…') : '';
     modal.querySelector('.pro-plans').hidden = true;
-    $('proManage').hidden = true;
+    $('proManage').hidden = !(webPro && POLAR_PORTAL); // suscripción, recibos y código: en el portal de Polar
     $('proPrivacy').hidden = true;
     $('proRestore').hidden = true;
     $('proRestoreHint').hidden = true;
     $('proWeb').hidden = webPro;
     $('proWebBuy').hidden = !hayCompraWeb();
     $('proWebKey').hidden = !hayCompraWeb();
+    $('proWebHint').hidden = !hayCompraWeb() || !POLAR_PORTAL;
+    $('proWebActivate').disabled = activando;
     const textos = {
       mensual: t('{precio} al mes', { precio: WEB_PRECIOS.mensual }),
       anual: t('{precio} al año', { precio: WEB_PRECIOS.anual }),
@@ -294,27 +364,45 @@ function showProWeb(motivo) {
       b.querySelector('small').textContent = textos[b.dataset.plan];
     }
     modal.hidden = false;
+    let cerrada = false;
     const close = () => {
+      if (cerrada) return; // p. ej. el cierre retrasado tras activar, si ya se cerró con la X
+      cerrada = true;
       modal.hidden = true;
       modal.classList.remove('web');
       $('proWeb').hidden = true;
       $('proRestore').hidden = false;
+      $('proManage').hidden = true;
       for (const [id, fn] of handlers) $(id).removeEventListener('click', fn);
       resolve(webPro);
     };
     const handlers = [
       ['proWebBuy', (e) => { const b = e.target.closest('[data-plan]'); if (b && WEB_COMPRA[b.dataset.plan]) window.open(WEB_COMPRA[b.dataset.plan], '_blank', 'noopener'); }],
       ['proWebApp', () => window.open(PLAY_URL, '_blank', 'noopener')],
+      ['proWebPortal', (e) => { e.preventDefault(); window.open(POLAR_PORTAL, '_blank', 'noopener'); }],
+      ['proManage', () => window.open(POLAR_PORTAL, '_blank', 'noopener')],
       ['proWebActivate', async () => {
         const code = $('proWebCode').value.trim();
-        if (!code) return;
+        if (!code || activando) return; // un doble toque no crea dos activaciones
+        activando = true;
+        $('proWebActivate').disabled = true;
         $('proStatus').textContent = t('Un momento…');
+        let ok = false;
         try {
           await activarLicencia(code);
-          $('proStatus').textContent = t('¡Listo! Ya tienes PDF Stroke Pro.');
-          setTimeout(close, 900);
+          ok = true;
         } catch (err) {
-          $('proStatus').textContent = (err?.message && !/fetch/i.test(err.message)) ? err.message : t('No se pudo comprobar el código. Revisa la conexión.');
+          if (!cerrada) $('proStatus').textContent = err?.message || sinConexion().message;
+        } finally {
+          activando = false;
+        }
+        if (ok) {
+          if (cerrada) return; // se cerró mientras se comprobaba: Pro ya queda activado, sin tocar otra ventana
+          $('proStatus').textContent = t('¡Listo! Ya tienes PDF Stroke Pro.');
+          $('proWeb').hidden = true;
+          setTimeout(close, 900);
+        } else {
+          $('proWebActivate').disabled = false;
         }
       }],
       ['proClose', close],

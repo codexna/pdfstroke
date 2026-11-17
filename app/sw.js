@@ -1,5 +1,5 @@
 // Service worker: funcionamiento sin conexión y recepción de PDFs compartidos (Android).
-const VERSION = 'v34';
+const VERSION = 'v35';
 const APP_CACHE = 'editorpdf-' + VERSION;
 const SHARED_CACHE = 'editorpdf-shared';
 const OCR_CACHE = 'editorpdf-ocr-1'; // modelos del OCR del navegador (grandes): no se borran al actualizar la app
